@@ -5,9 +5,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from ruangao_note import __version__
+from ruangao_note.api.routes import router as library_router
 from ruangao_note.core.config import get_settings
 from ruangao_note.db.session import get_engine
-from ruangao_note.api.routes import router as library_router
 
 settings = get_settings()
 
