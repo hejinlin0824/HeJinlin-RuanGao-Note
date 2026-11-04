@@ -125,7 +125,10 @@ def build_source_block_payloads(
             "unmapped_entries": 0,
             "cleanup_candidate_count": 0,
             "warnings": [
-                "MinerU content_list.json was not present; page-level SourceBlocks were not guessed from full.md."
+                (
+                    "MinerU content_list.json was not present; page-level SourceBlocks "
+                    "were not guessed from full.md."
+                )
             ],
         }
 
