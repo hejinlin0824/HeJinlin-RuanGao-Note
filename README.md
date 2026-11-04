@@ -30,6 +30,20 @@ python -m pip install -U pip
 pip install -e ".[dev]"
 ```
 
+Windows 一键验收（推荐）：
+
+```powershell
+.\test.bat
+```
+
+也可以直接运行 PowerShell 脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
+```
+
+脚本会使用项目的 `.venv` Python，依次检查 Python 版本、在系统临时目录创建一次性 SQLite 数据库并执行 Alembic 迁移、运行 Ruff 和 pytest。迁移测试库会在结束后清理，不会覆盖正式教材数据库。首次使用前仍需按上方步骤创建虚拟环境并安装 `.[dev]` 依赖。
+
 数据库初始化和检查：
 
 ```powershell
