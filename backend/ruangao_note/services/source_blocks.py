@@ -103,6 +103,52 @@ def _as_text(value: Any) -> str:
     return "\n".join(parts)
 
 
+
+def _shape_summary(value: Any, depth: int = 0) -> dict[str, Any]:
+    """Summarize OCR payload structure without copying recognized text into diagnostics."""
+    if isinstance(value, str):
+        return {
+            "kind": "string",
+            "length": len(value),
+            "has_non_whitespace": bool(value.strip()),
+        }
+    if isinstance(value, list):
+        item_kinds = sorted({_shape_kind(item) for item in value})
+        summary: dict[str, Any] = {
+            "kind": "list",
+            "length": len(value),
+            "item_kinds": item_kinds[:8],
+        }
+        if depth < 2 and value:
+            summary["sample_items"] = [
+                _shape_summary(item, depth + 1) for item in value[:3]
+            ]
+        return summary
+    if isinstance(value, dict):
+        keys = sorted(str(key) for key in value)
+        summary = {"kind": "object", "keys": keys[:24]}
+        if depth < 2:
+            summary["fields"] = {
+                str(key): _shape_summary(value[key], depth + 1)
+                for key in list(value)[:16]
+            }
+        return summary
+    if value is None:
+        return {"kind": "null"}
+    return {"kind": type(value).__name__}
+
+
+def _shape_kind(value: Any) -> str:
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, str):
+        return "string"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
 def _flatten_layout_payload(payload: Any) -> list[dict[str, Any]]:
     """Read flat Content List V1 and page-grouped Content List V2 structures."""
     entries: list[dict[str, Any]] = []
@@ -428,6 +474,13 @@ def build_source_block_payloads(
                 ),
                 "top_level_keys": sorted(str(key) for key in item),
                 "content_keys": content_keys,
+                "content_value_shapes": {
+                    str(key): _shape_summary(value)
+                    for key, value in content.items()
+                }
+                if isinstance(content, dict)
+                else {},
+                "bbox": payload["bbox"],
                 "media_path": str(media_path) if media_path else None,
                 "visual_only": block_type in {"image", "chart", "table"},
             }
