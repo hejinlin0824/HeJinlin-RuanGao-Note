@@ -23,6 +23,7 @@ class MinerUSettings:
     language: str = "ch"
     poll_interval_seconds: float = 5.0
     max_wait_seconds: int = 1500
+    download_proxy: str | None = None
 
 
 class MinerUError(RuntimeError):
@@ -158,14 +159,21 @@ class MinerUCloudParser:
             last_status = None
             last_content_length = None
             try:
-                # Do not inherit ambient proxy settings for object-storage downloads.
-                # This path was observed to fail through the user's local HTTPS proxy;
-                # explicit proxy support can be added later as a dedicated setting.
-                with self.client_factory(
-                    timeout=httpx.Timeout(300.0, connect=30.0),
-                    follow_redirects=True,
-                    trust_env=False,
-                ) as download_client:
+                # Never inherit ambient/system proxy settings for signed object-storage URLs.
+                # Use a proxy only when the operator explicitly configures one.
+                client_kwargs: dict[str, Any] = {
+                    "timeout": httpx.Timeout(300.0, connect=30.0),
+                    "follow_redirects": True,
+                    "trust_env": False,
+                }
+                proxy_label = "disabled"
+                if self.settings.download_proxy:
+                    client_kwargs["proxy"] = self.settings.download_proxy
+                    proxy_parts = urlsplit(self.settings.download_proxy)
+                    proxy_host = proxy_parts.hostname or "configured-proxy"
+                    proxy_port = f":{proxy_parts.port}" if proxy_parts.port else ""
+                    proxy_label = f"explicit:{proxy_parts.scheme}://{proxy_host}{proxy_port}"
+                with self.client_factory(**client_kwargs) as download_client:
                     with download_client.stream("GET", zip_url) as response:
                         last_status = response.status_code
                         last_content_length = response.headers.get("content-length")
@@ -191,7 +199,7 @@ class MinerUCloudParser:
                 "attempts": 3,
                 "bytes_received_across_attempts": total_received,
                 "content_length": last_content_length,
-                "proxy": "disabled",
+                "proxy": proxy_label,
             }
             status_detail = (
                 f", last_http_status={last_status}" if last_status is not None else ""
@@ -215,7 +223,7 @@ class MinerUCloudParser:
             "attempts": attempt,
             "bytes_received": len(archive_content),
             "content_length": last_content_length,
-            "proxy": "disabled",
+            "proxy": proxy_label,
         }
         return self._read_result_zip(archive_content)
 
