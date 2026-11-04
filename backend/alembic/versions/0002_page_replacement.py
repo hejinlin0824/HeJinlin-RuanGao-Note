@@ -1,7 +1,7 @@
 """Track which immutable page record supersedes an earlier page."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import inspect
 
 revision = "0002_page_replacement"
