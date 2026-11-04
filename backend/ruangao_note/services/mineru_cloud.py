@@ -147,10 +147,13 @@ class MinerUCloudParser:
         archive_content: bytes | None = None
         last_error: httpx.HTTPError | None = None
         last_status: int | None = None
+        last_content_length: str | None = None
         total_received = 0
         download_host = urlsplit(zip_url).hostname or "unknown host"
         for attempt in range(1, 4):
             attempt_received = 0
+            last_status = None
+            last_content_length = None
             try:
                 # Do not inherit ambient proxy settings for object-storage downloads.
                 # This path was observed to fail through the user's local HTTPS proxy;
@@ -162,6 +165,7 @@ class MinerUCloudParser:
                 ) as download_client:
                     with download_client.stream("GET", zip_url) as response:
                         last_status = response.status_code
+                        last_content_length = response.headers.get("content-length")
                         response.raise_for_status()
                         chunks: list[bytes] = []
                         for chunk in response.iter_bytes():
@@ -181,10 +185,16 @@ class MinerUCloudParser:
             status_detail = (
                 f", last_http_status={last_status}" if last_status is not None else ""
             )
+            length_detail = (
+                f", last_content_length={last_content_length}"
+                if last_content_length is not None
+                else ""
+            )
             raise self._network_error(
                 f"downloading the result ZIP for MinerU batch {batch_id} "
                 f"from storage host {download_host} after 3 attempts "
-                f"(bytes_received_across_attempts={total_received}{status_detail})",
+                f"(bytes_received_across_attempts={total_received}"
+                f"{status_detail}{length_detail})",
                 last_error,
             ) from last_error
         assert archive_content is not None
