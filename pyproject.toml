@@ -16,12 +16,12 @@ dependencies = [
   "alembic>=1.14,<2.0",
   "Pillow>=11.1,<13.0",
   "python-multipart>=0.0.20,<1.0",
+  "httpx>=0.28,<1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3,<9.0",
-  "httpx>=0.28,<1.0",
   "ruff>=0.9,<1.0",
 ]
 
@@ -42,7 +42,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ruangao_note"]
-known-third-party = ["PIL", "sqlalchemy"]
+known-third-party = ["PIL", "httpx", "sqlalchemy"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
