@@ -21,7 +21,7 @@ def png_bytes(color: tuple[int, int, int]) -> bytes:
 def test_complete_book_chapter_and_page_api_flow(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "uploads"))
     get_settings.cache_clear()
-    engine = create_database_engine("sqlite:///:memory:")
+    engine = create_database_engine(f"sqlite:///{tmp_path / 'api-test.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
@@ -60,6 +60,18 @@ def test_complete_book_chapter_and_page_api_flow(tmp_path, monkeypatch) -> None:
             assert [page["sort_order"] for page in uploaded] == list(range(24))
 
             page_id = uploaded[0]["id"]
+            reorder_response = client.put(
+                f"/api/chapters/{chapter_id}/pages/order",
+                json={"page_ids": [page["id"] for page in reversed(uploaded)]},
+            )
+            assert reorder_response.status_code == 200
+            assert reorder_response.json()[0]["id"] == uploaded[-1]["id"]
+            reorder_back = client.put(
+                f"/api/chapters/{chapter_id}/pages/order",
+                json={"page_ids": [page["id"] for page in uploaded]},
+            )
+            assert reorder_back.status_code == 200
+
             preview = client.get(
                 f"/api/chapters/{chapter_id}/pages/{page_id}/image"
             )
