@@ -298,6 +298,62 @@ def test_mineru_result_download_uses_direct_fresh_client_and_streams_zip():
     assert parser.last_download_diagnostics["proxy"] == "disabled"
 
 
+
+
+def test_mineru_result_download_uses_only_explicitly_configured_proxy():
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("full.md", "# Proxied download")
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-length": str(len(stream.getvalue()))}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield stream.getvalue()
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+            assert kwargs["proxy"] == "http://127.0.0.1:7890"
+            assert kwargs["follow_redirects"] is True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            return FakeResponse()
+
+    parser = MinerUCloudParser(
+        MinerUSettings(
+            token="test-token",
+            download_proxy="http://127.0.0.1:7890",
+        ),
+        client_factory=FakeClient,
+        sleep=lambda _: None,
+    )
+
+    result = parser._download_result_zip(
+        "https://cdn.example/signed-result.zip?signature=must-not-be-logged",
+        "batch-proxy-test",
+    )
+
+    assert result["markdown"]["full.md"] == "# Proxied download"
+    assert parser.last_download_diagnostics["proxy"] == "explicit:http://127.0.0.1:7890"
+    assert "signature" not in str(parser.last_download_diagnostics)
+
 def test_mineru_zip_parser_rejects_path_traversal():
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
