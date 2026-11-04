@@ -160,12 +160,22 @@ class MinerUCloudParser:
 
         artifacts: dict[str, Any] = {"markdown": {}, "json": {}, "files": []}
         with archive:
+            total_uncompressed = sum(info.file_size for info in archive.infolist())
+            if total_uncompressed > 1024 * 1024 * 1024:
+                raise MinerUError("MinerU ZIP exceeds the 1 GiB extraction limit.")
             for info in archive.infolist():
                 if info.is_dir():
                     continue
                 name = info.filename
                 path = PurePosixPath(name)
-                if path.is_absolute() or ".." in path.parts:
+                is_symlink = ((info.external_attr >> 16) & 0o170000) == 0o120000
+                if (
+                    path.is_absolute()
+                    or ".." in path.parts
+                    or "\\" in name
+                    or (path.parts and ":" in path.parts[0])
+                    or is_symlink
+                ):
                     raise MinerUError("MinerU ZIP contains an unsafe file path.")
                 raw = archive.read(info)
                 artifacts["files"].append(name)
