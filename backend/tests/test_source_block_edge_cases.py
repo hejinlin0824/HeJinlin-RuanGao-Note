@@ -79,6 +79,14 @@ def test_visual_empty_block_is_distinguished_from_empty_paragraph():
     assert diagnostics[0]["media_path"] == "images/figure-1.jpg"
     assert diagnostics[1]["visual_only"] is False
     assert diagnostics[1]["content_keys"] == ["paragraph_content"]
+    assert diagnostics[1]["bbox"] == [10.0, 700.0, 900.0, 740.0]
+    assert diagnostics[1]["content_value_shapes"] == {
+        "paragraph_content": {
+            "kind": "list",
+            "length": 0,
+            "item_kinds": [],
+        }
+    }
     assert "1 non-visual layout blocks" in report["warnings"][0]
 
 
@@ -113,3 +121,38 @@ def test_paragraph_content_with_nested_spans_is_extracted():
     assert report["empty_text_entries"] == 0
     assert report["unexpected_empty_text_entries"] == 0
     assert report["warnings"] == []
+
+
+
+def test_empty_block_diagnostics_summarize_unknown_payload_without_copying_text():
+    hidden_text = "这段识别结果不能丢失"
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {
+                            "paragraph_content": {
+                                "provider_specific_nodes": [{"recognized_text": hidden_text}]
+                            }
+                        },
+                        "bbox": [1, 2, 300, 40],
+                    }
+                ]
+            ]
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert blocks[0]["text"] == ""
+    diagnostic = report["empty_block_diagnostics"][0]
+    shape = diagnostic["content_value_shapes"]["paragraph_content"]
+    assert shape["kind"] == "object"
+    assert shape["keys"] == ["provider_specific_nodes"]
+    assert shape["fields"]["provider_specific_nodes"]["sample_items"][0]["keys"] == [
+        "recognized_text"
+    ]
+    assert hidden_text not in str(report)
