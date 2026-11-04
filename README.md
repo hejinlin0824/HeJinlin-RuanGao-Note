@@ -65,9 +65,9 @@ MinerU 网络诊断（Windows 一键运行）：
 
 - 双击项目根目录的 `diagnose_mineru_network.bat` 即可运行，无需激活 Python 虚拟环境。
 - 也可执行：`powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\diagnose_mineru_network.ps1`。
-- 自动检查 `mineru.net` 和 `cdn-mineru.openxlab.org.cn` 的 DNS、TCP 443、TLS 1.2、curl HTTPS、Python httpx（分别测试系统代理启用/禁用），并记录 WinHTTP/当前用户代理配置。
+- 自动检查 `mineru.net` 和 `cdn-mineru.openxlab.org.cn` 的 DNS、TCP 443、TLS 1.2，并分别通过 curl 与 Python httpx 测试直连和显式使用当前用户代理；输出 HTTP 状态码、远端 IP、Python/httpx 版本及异常信息。
 - 诊断日志自动保存在项目根目录，文件名为 `mineru_network_diagnostic_时间戳.txt`。把日志发给开发者即可分析。
-- 脚本只做网络诊断，不读取 `.env`、不读取/打印 MinerU Token、不提交 OCR、不修改系统代理或防火墙。CDN 根路径返回 403/404/405 也可能代表网络链路已成功到达服务器；不能据此保证签名 ZIP 下载一定成功。
+- 脚本只做网络诊断，不读取 `.env`、不读取/打印 MinerU Token、不提交 OCR、不修改系统代理或防火墙。CDN 根路径返回 403/404/405 也可能代表网络链路已成功到达服务器；不能据此保证签名 ZIP 下载一定成功。应用内 MinerU 结果 ZIP 下载目前明确使用直连（不继承环境代理），并记录下载主机、HTTP 状态、重试次数和跨尝试接收字节数。
 
 OCR 处理 API（TP-04）：
 
