@@ -42,7 +42,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ruangao_note"]
-known-third-party = ["sqlalchemy"]
+known-third-party = ["PIL", "sqlalchemy"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
