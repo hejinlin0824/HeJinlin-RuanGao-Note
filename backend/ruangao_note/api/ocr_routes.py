@@ -9,6 +9,7 @@ from ruangao_note.db.session import get_db
 from ruangao_note.domain.models import ProcessingRun
 from ruangao_note.services.chapter_ocr import (
     ChapterOCRNotFoundError,
+    ChapterOCRResumeConflictError,
     ChapterOCRService,
 )
 from ruangao_note.services.ocr import OCRPageNotFoundError, OCRService
@@ -51,6 +52,26 @@ def run_chapter_ocr(
         run = ChapterOCRService(session).process_chapter(chapter_id)
     except ChapterOCRNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _run_payload(run)
+
+
+@router.post("/chapters/{chapter_id}/ocr-runs/{run_id}/resume")
+def resume_chapter_ocr(
+    chapter_id: str, run_id: str, session: Session = Depends(get_db)
+) -> dict[str, object]:
+    """Retry retrieval for a saved MinerU batch without re-uploading the source PDF."""
+    settings = get_settings()
+    if not settings.mineru_token.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="MinerU token is not configured. Set MINERU_TOKEN in the local .env file.",
+        )
+    try:
+        run = ChapterOCRService(session).resume_run(chapter_id, run_id)
+    except ChapterOCRNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChapterOCRResumeConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _run_payload(run)
 
 
