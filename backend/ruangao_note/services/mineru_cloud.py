@@ -143,32 +143,52 @@ class MinerUCloudParser:
         }
 
     def _download_result_zip(self, zip_url: str, batch_id: str) -> dict[str, Any]:
-        """Download a pre-signed result URL with fresh unauthenticated connections."""
-        archive_response = None
+        """Download a pre-signed result URL directly, with fresh connections and diagnostics."""
+        archive_content: bytes | None = None
         last_error: httpx.HTTPError | None = None
+        last_status: int | None = None
+        total_received = 0
         download_host = urlsplit(zip_url).hostname or "unknown host"
         for attempt in range(1, 4):
+            attempt_received = 0
             try:
+                # Do not inherit ambient proxy settings for object-storage downloads.
+                # This path was observed to fail through the user's local HTTPS proxy;
+                # explicit proxy support can be added later as a dedicated setting.
                 with self.client_factory(
                     timeout=httpx.Timeout(300.0, connect=30.0),
                     follow_redirects=True,
+                    trust_env=False,
                 ) as download_client:
-                    archive_response = download_client.get(zip_url)
-                    archive_response.raise_for_status()
+                    with download_client.stream("GET", zip_url) as response:
+                        last_status = response.status_code
+                        response.raise_for_status()
+                        chunks: list[bytes] = []
+                        for chunk in response.iter_bytes():
+                            if chunk:
+                                chunks.append(chunk)
+                                attempt_received += len(chunk)
+                        archive_content = b"".join(chunks)
+                total_received += attempt_received
                 last_error = None
                 break
             except httpx.HTTPError as exc:
+                total_received += attempt_received
                 last_error = exc
                 if attempt < 3:
                     self.sleep(float(attempt * 3))
         if last_error is not None:
+            status_detail = (
+                f", last_http_status={last_status}" if last_status is not None else ""
+            )
             raise self._network_error(
                 f"downloading the result ZIP for MinerU batch {batch_id} "
-                f"from storage host {download_host} after 3 attempts",
+                f"from storage host {download_host} after 3 attempts "
+                f"(bytes_received_across_attempts={total_received}{status_detail})",
                 last_error,
             ) from last_error
-        assert archive_response is not None
-        return self._read_result_zip(archive_response.content)
+        assert archive_content is not None
+        return self._read_result_zip(archive_content)
 
     def _poll_result(
         self,
