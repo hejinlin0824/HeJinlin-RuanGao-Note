@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：Spec 与任务包已落盘；TP-01 项目骨架已建立，正在等待 Python 3.13.15 环境下的运行验收。
+- 当前阶段：TP-00 文档基线已完成；TP-01 本地环境、lint、单元测试和健康检查已通过（GitHub Actions 状态仍需确认）；TP-02 领域模型与数据库骨架已提交 dev，等待本地迁移和模型测试验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -396,8 +396,8 @@
 | 任务包 | 状态 | 说明 |
 |---|---|---|
 | TP-00 | 文档已落盘 | README、Spec、任务包路线图 |
-| TP-01 | 实现中（待运行验收） | 已建立 Python 3.13 项目配置、FastAPI 健康检查、环境配置、pytest 测试和 GitHub Actions CI；尚未取得实际 CI 通过结果 |
-| TP-02～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-01 | 本地验收通过（CI待确认） | Python 3.13.15、Ruff、3 项 pytest、FastAPI 启动和两个健康检查接口均已由用户本地验证；GitHub Actions 尚未确认 |
+| TP-02 | 实现中（待本地验收） | 已提交 SQLAlchemy 领域模型、SQLite 引擎/会话、Alembic 初始迁移、Book Repository/Service 和模型测试；待用户执行迁移、lint、pytest |\n| TP-03～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
 
@@ -420,3 +420,52 @@
 6. 之后再进入目录识别、知识点、三层架构视图。
 
 每一轮只推进当前任务包。若发现 Spec 中有设计缺口，先记录并更新文档，再实现，不要临时堆代码。
+
+
+## 8. TP-02 当前实现记录（待本地验收）
+
+### 已提交到 dev 的实现
+
+- 数据库基础设施：SQLAlchemy 2.x Declarative Base、UTC 时间戳、SQLite 文件目录创建、SQLite 外键约束启用、进程级 Engine/SessionFactory 和请求级 Session 生成器。
+- 教材目录与页面：Book、Chapter、Section、ChapterPage。
+- 处理与证据：ProcessingRun、SourceBlock。
+- 知识结构：KnowledgeNode、KnowledgeSource（知识点与原文块多对多）。
+- 关系与审核：Relation、Figure、AuditIssue、AuditEvent。
+- 题库与复习预留：Question、QuestionSource、ReviewState、AnswerLog。
+- 初始 Repository/Service：BookRepository、BookService。
+- Alembic 配置与初始迁移：alembic.ini、backend/alembic。
+- readiness 接口现在执行数据库 SELECT 1；数据库不可用时返回 HTTP 503。
+- 自动化测试覆盖表结构、知识点—原文多对多、目录树与知识树分离、关系端点约束、SQLite 外键和 BookService。
+
+### 关键建模约束
+
+1. Section.parent_id 只表达教材目录树；KnowledgeNode.parent_id 只表达知识点学习层级，二者完全独立。
+2. KnowledgeSource 是独立关联表，一个知识点可引用多个 SourceBlock，一个 SourceBlock 也可被多个知识点引用。
+3. Relation 的端点必须是完整的“知识点—知识点”或“章节—章节”组合，不能混用；关系方向、类型、来源和审核状态独立保存。
+4. SourceBlock 必须关联 ChapterPage 和 ProcessingRun，原文证据带有处理版本。
+5. ReviewState/AnswerLog 通过 target_type + target_id 支持知识点或题目两种复习粒度；这两处是有意采用的多态引用，后续服务层必须验证目标存在。
+
+### 初始迁移说明
+
+当前 0001 初始迁移通过当时的 SQLAlchemy metadata 创建初始空库，目的是先建立可运行的初始 schema。它只用于全新数据库初始化；后续结构变更必须使用显式 Alembic operations 生成不可变迁移，不能修改已发布迁移来“追平”模型。
+
+### 本地验收命令
+
+在项目根目录、Python 3.13.15 虚拟环境中执行：
+
+```powershell
+ruff check .
+pytest -v
+alembic upgrade head
+alembic current
+```
+
+再验证数据库文件生成后，启动服务：
+
+```powershell
+uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port 8765
+```
+
+访问 `/health/ready` 应返回 `{"status":"ready"}`。首次迁移后可通过 `alembic current` 确认版本为 `0001_initial_domain`。
+
+TP-02 在以上命令真实运行并修复问题前，不标记为完成。
