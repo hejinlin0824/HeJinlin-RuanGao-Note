@@ -294,7 +294,7 @@ class Relation(TimestampMixin, Base):
             "'contrast', 'association', 'application', 'implements', 'example_of', 'same_as')",
             name="ck_relation_type",
         ),
-        CheckConstraint("direction IN ('directed', 'undirected)", name="ck_relation_direction"),
+        CheckConstraint("direction IN ('directed', 'undirected')", name="ck_relation_direction"),
         CheckConstraint(
             "origin IN ('text_explicit', 'human_inferred', 'model_candidate', 'system_derived')",
             name="ck_relation_origin",
