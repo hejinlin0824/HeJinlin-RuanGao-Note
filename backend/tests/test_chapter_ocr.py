@@ -236,6 +236,59 @@ def test_mineru_zip_parser_reads_markdown_and_json():
     assert set(result["files"]) == {"full.md", "layout.json"}
 
 
+
+def test_mineru_result_download_uses_direct_fresh_client_and_streams_zip():
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("full.md", "# Direct download")
+
+    class FakeResponse:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            payload = stream.getvalue()
+            yield payload[:12]
+            yield payload[12:]
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+            assert kwargs["follow_redirects"] is True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            assert method == "GET"
+            assert url.startswith("https://cdn.example/")
+            return FakeResponse()
+
+    parser = MinerUCloudParser(
+        MinerUSettings(token="test-token"),
+        client_factory=FakeClient,
+        sleep=lambda _: None,
+    )
+
+    result = parser._download_result_zip(
+        "https://cdn.example/signed-result.zip?signature=hidden",
+        "batch-direct-test",
+    )
+
+    assert result["markdown"]["full.md"] == "# Direct download"
+
+
 def test_mineru_zip_parser_rejects_path_traversal():
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
