@@ -402,7 +402,8 @@
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
 | TP-04 | GitHub CI 通过，待 Windows/真实云端验收 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
-| TP-05～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-05 | 第一阶段已实现，待 CI/真实样本验收 | content_list.json → SourceBlock、页码映射、稳定块锚点、保守清洗候选和章节 Markdown；不自动删除可疑内容 |
+| TP-06～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
 
@@ -493,7 +494,7 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - OCR 执行是同步请求内处理，尚未接入后台队列；长耗时云 OCR 不应直接沿用同步执行方式。
 - Mock Provider 只验证接口和持久化链路，真实识别能力需要后续独立 Provider 实现。
 - 当前质量指标为启发式提示，不等同于专业图像质量评估；倾斜角检测、裁边、透视矫正尚未实现。
-- 当前结果尚未自动写入 SourceBlock；该职责属于 TP-05，避免 OCR 任务和证据块生成耦合。
+- 真实 MinerU 章节结果现已在 TP-05 中按需/成功后转为 SourceBlock；Mock Provider 仍不会生成虚构原文块。
 
 
 ## 10. TP-04 MinerU 云端章节批处理补充
@@ -505,3 +506,36 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - Token 仅从本机项目根目录 `.env` 读取；`scripts/configure_mineru.ps1` 使用隐藏输入写入该文件。真实凭据不得进入仓库、数据库或日志。
 - 预签名上传 URL 和结果 ZIP URL 均不携带 Bearer Token；ZIP 路径穿越会被拒绝。
 - 当前实现仍是同步长请求，默认最多轮询 25 分钟；任务队列、回调、断点恢复与自动 SourceBlock 生成尚未实现。
+
+
+## 11. TP-05 第一阶段实现记录（等待 CI 与真实样本验收）
+
+### 已实现
+
+- 从 MinerU ZIP 中的 `content_list.json` 读取标题、正文、表格、公式、图片说明、脚注等布局项。
+- 按 MinerU 的 0-based `page_idx` 映射 TP-04 保存的 1-based `pdf_page_index`，再关联原始 `ChapterPage.id`。
+- 使用来源页 ID、块类型、文本内容哈希和同页重复序号生成版本内稳定 `block_key`；数据库唯一约束仍为 `(processing_run_id, block_key)`。
+- 写入已有 SourceBlock 表，不增加迁移；保留 bbox、文本哈希、类型、排序和 ProcessingRun 版本。
+- 生成带 `<!-- source:block_key -->` 锚点的章节 Markdown。
+- 对 arXiv/DOI/preprint 元数据、脚注标记和跨页重复短文本生成清洗候选，动作均为 `review_only`；原始 Markdown/JSON 与 SourceBlock 文本不做自动删除。
+- 新 OCR 成功或恢复成功后自动尝试物化；也提供手动物化接口，便于处理 TP-05 上线前已经成功的 OCR 历史记录。
+
+### 当前边界
+
+- 如果 ZIP 没有 `content_list.json`，只保留原始 full.md，不从无页码 Markdown 猜测 SourceBlock 的页归属；质量报告会给出 warning。
+- bbox 保留 MinerU 原始数值，不擅自假设其坐标单位或归一化方式。
+- 当前清洗规则只做候选标注，不会自动移除页眉、页脚、水印或脚注；下一阶段需要结合真实教材样本评估误报，再设计人工确认/可撤销的清洗视图。
+- 图片资产的独立提取与持久化、bbox 到前端图片的精确叠加查看，仍需后续工作。
+
+### 新增 API
+
+- `POST /api/chapters/{chapter_id}/ocr-runs/{run_id}/source-blocks`：对成功的章节 OCR 运行幂等地物化 SourceBlock，并返回清洗候选与 Markdown。
+- `GET /api/chapters/{chapter_id}/ocr-runs/{run_id}/source-blocks`：查询该版本的原文块，包含原图预览 URL。
+
+### 验收重点
+
+- 两页以上内容必须映射到正确 ChapterPage。
+- 表格 HTML、公式文本和图注不得丢失。
+- 疑似水印/脚注/重复页眉页脚只能标记，不能从证据中删除。
+- 相同 ProcessingRun 重复物化不得重复创建 SourceBlock。
+- 不存在 content_list.json 时必须明确报告未生成页级块。
