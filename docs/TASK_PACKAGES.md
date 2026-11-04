@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：TP-00～TP-03 已完成验收；TP-04 首版 OCR Provider 抽象、预处理和处理记录 API 已提交 dev；GitHub Actions 已通过，等待 Windows 本地验收。
+- 当前阶段：TP-00～TP-03 已完成验收；TP-04 已包含 Mock OCR、MinerU v4 云端章节批量解析、隐藏式本地 Token 配置和章节 PDF 组装测试；等待 GitHub CI 与 Windows 云端验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -401,7 +401,7 @@
 | TP-01 | 已完成 | Python 3.13.15、Ruff、pytest、FastAPI 启动和健康检查已验收 |
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
-| TP-04 | CI 已通过，待 Windows 本地验收 | Provider 抽象、预处理、ProcessingRun 结果持久化、单页执行与历史 API 已提交；真实 OCR 引擎未接入 |
+| TP-04 | MinerU 云端章节批处理已实现，CI/本地验收待完成 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
 | TP-05～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
@@ -494,3 +494,14 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - Mock Provider 只验证接口和持久化链路，真实识别能力需要后续独立 Provider 实现。
 - 当前质量指标为启发式提示，不等同于专业图像质量评估；倾斜角检测、裁边、透视矫正尚未实现。
 - 当前结果尚未自动写入 SourceBlock；该职责属于 TP-05，避免 OCR 任务和证据块生成耦合。
+
+
+## 10. TP-04 MinerU 云端章节批处理补充
+
+- 参考项目：`hejinlin0824/HeJinlin-paperLib/backend/app/services/parser_mineru.py`，复用其 MinerU v4 流程：申请批量上传 URL、预签名 PUT、轮询 batch、下载 ZIP。
+- 章节接口：`POST /api/chapters/{chapter_id}/ocr`。仅选择 `status=stored` 的活动页面，按 `sort_order` 排序，构建一个多页 PDF 并创建一个 MinerU batch 任务。
+- PDF 仅作为临时内存派生文件；EXIF 方向和页面旋转会应用到 PDF 页面，单页最大边长限制为 3508 像素，原图与 SHA-256 不变。
+- MinerU 结果中的 Markdown、JSON 和文件清单保存到章节级 ProcessingRun；每个 PDF 页码与 ChapterPage ID 的映射同时保存。TP-05 再把布局块映射成稳定 SourceBlock。
+- Token 仅从本机项目根目录 `.env` 读取；`scripts/configure_mineru.ps1` 使用隐藏输入写入该文件。真实凭据不得进入仓库、数据库或日志。
+- 预签名上传 URL 和结果 ZIP URL 均不携带 Bearer Token；ZIP 路径穿越会被拒绝。
+- 当前实现仍是同步长请求，默认最多轮询 25 分钟；任务队列、回调、断点恢复与自动 SourceBlock 生成尚未实现。
