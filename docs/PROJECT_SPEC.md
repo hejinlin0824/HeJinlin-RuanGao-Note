@@ -270,7 +270,8 @@
 - figures：图片/图表、Mermaid 候选和回退状态。
 - knowledge_nodes：知识点树节点、摘要、解释、状态。
 - knowledge_sources：知识点与来源块多对多关联。
-- relations：章节/知识点之间的关系边，端点类型必须成对一致。\n- relation_evidence：关系边与原文 SourceBlock 的多对多证据关联。
+- relations：章节/知识点之间的关系边，端点类型必须成对一致。
+- relation_evidence：关系边与原文 SourceBlock 的多对多证据关联。
 - questions：题目、答案、解释、审核状态。\n- question_sources：题目与原文 SourceBlock 的多对多来源关联。
 - review_states：用户对知识点/题目的掌握状态。
 - answer_logs：每次作答和自评。
