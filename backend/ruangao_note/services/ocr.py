@@ -84,7 +84,9 @@ class MockOCRProvider:
         )
 
 
-def preprocess_image(\n    original_bytes: bytes, *, rotation: int = 0\n) -> tuple[bytes, ImageQualityReport]:
+def preprocess_image(
+    original_bytes: bytes, *, rotation: int = 0
+) -> tuple[bytes, ImageQualityReport]:
     """Create an in-memory OCR derivative while preserving the immutable original file."""
     if rotation not in {0, 90, 180, 270}:
         raise ValueError("rotation must be one of 0, 90, 180, or 270.")
