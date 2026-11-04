@@ -682,7 +682,7 @@ def test_mineru_v2_semantic_span_fields_are_extracted_and_v2_is_preferred():
 
 
 def test_materialize_repairs_previously_empty_source_blocks_preserving_ids(tmp_path):
-    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+    engine, session, chapter, pages, _storage = chapter_context(tmp_path)
     try:
         run = ProcessingRun(
             chapter_id=chapter.id,
@@ -755,7 +755,9 @@ def test_materialize_repairs_previously_empty_source_blocks_preserving_ids(tmp_p
         assert [block.block_type for block in repaired] == ["heading", "paragraph"]
         assert all(block.version == 2 for block in repaired)
         assert report["empty_text_entries"] == 0
-        assert session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
+        assert (
+            session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
+        )
     finally:
         session.close()
         engine.dispose()
