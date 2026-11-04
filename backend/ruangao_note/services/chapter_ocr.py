@@ -147,6 +147,7 @@ class ChapterOCRService:
                 "state": result["state"],
                 "model_version": result["model_version"],
                 "language": result["language"],
+                "download_diagnostics": result.get("download_diagnostics"),
                 "recovery": {"method": "download_existing_batch", "resubmitted": False},
             }
             run.normalized_result = {
@@ -257,6 +258,7 @@ class ChapterOCRService:
                 "state": result["state"],
                 "model_version": result["model_version"],
                 "language": result["language"],
+                "download_diagnostics": result.get("download_diagnostics"),
                 "pdf_sha256": pdf_sha256,
                 "pdf_size_bytes": len(pdf_bytes),
                 "page_count": len(page_references),
