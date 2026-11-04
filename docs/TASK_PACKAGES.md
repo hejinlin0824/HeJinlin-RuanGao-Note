@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：TP-00～TP-03 已完成验收；TP-04 首版 OCR Provider 抽象、预处理和处理记录 API 已提交 dev，等待 GitHub CI 与 Windows 本地验收。
+- 当前阶段：TP-00～TP-03 已完成验收；TP-04 首版 OCR Provider 抽象、预处理和处理记录 API 已提交 dev；GitHub Actions 已通过，等待 Windows 本地验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -401,7 +401,7 @@
 | TP-01 | 已完成 | Python 3.13.15、Ruff、pytest、FastAPI 启动和健康检查已验收 |
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
-| TP-04 | 实现中，待 CI/本地验收 | Provider 抽象、预处理、ProcessingRun 结果持久化、单页执行与历史 API 已提交；真实 OCR 引擎未接入 |
+| TP-04 | CI 已通过，待 Windows 本地验收 | Provider 抽象、预处理、ProcessingRun 结果持久化、单页执行与历史 API 已提交；真实 OCR 引擎未接入 |
 | TP-05～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
@@ -476,7 +476,7 @@ uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port
 TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 
 
-## 9. TP-04 首版实现记录（等待 CI 与 Windows 验收）
+## 9. TP-04 首版实现记录（CI 通过，等待 Windows 验收）
 
 ### 已实现
 
