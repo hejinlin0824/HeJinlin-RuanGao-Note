@@ -294,7 +294,7 @@ def test_source_block_materialization_is_idempotent_and_keeps_page_anchor(tmp_pa
                     "json": {
                         "content_list.json": [
                             {"type": "title", "page_idx": 0, "text": "第一节"},
-                            {"type": "text", "page_idx": 1, "text": "正文段落"},
+                            {"type": "text", "page_idx": 1, "text": "arXiv: 2401.12345 论文水印"},
                         ]
                     }
                 },
@@ -313,9 +313,11 @@ def test_source_block_materialization_is_idempotent_and_keeps_page_anchor(tmp_pa
         assert [block.page_id for block in blocks] == [pages[0].id, pages[1].id]
         assert [block.id for block in again] == first_ids
         assert len(session.query(SourceBlock).filter_by(processing_run_id=run.id).all()) == 2
-        markdown = render_anchored_markdown(blocks)
+        markdown = render_anchored_markdown(blocks, report)
         assert f"<!-- source:{blocks[0].block_key} -->" in markdown
         assert "## 第一节" in markdown
+        assert "cleanup-review: possible_watermark_or_publication_metadata; not removed" in markdown
+        assert "arXiv: 2401.12345 论文水印" in markdown
     finally:
         session.close()
         engine.dispose()
