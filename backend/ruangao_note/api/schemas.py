@@ -63,3 +63,8 @@ class PageReorder(BaseModel):
 
 class PageNumberUpdate(BaseModel):
     textbook_page_number: int | None = Field(default=None, ge=1)
+
+
+
+class PageRotationUpdate(BaseModel):
+    rotation: int = Field(ge=0, le=270)
