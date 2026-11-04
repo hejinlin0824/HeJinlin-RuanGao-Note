@@ -24,46 +24,85 @@ _WATERMARK_PATTERNS = (
     re.compile(r"\bdoi\s*:\s*10\.\d{4,9}/", re.IGNORECASE),
     re.compile(r"\bpreprint\b", re.IGNORECASE),
 )
-_FOOTNOTE_PREFIX = re.compile(r"^\s*(?:\[\d{1,3}\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+|注\s*\d*[:：])\s*")
+_FOOTNOTE_PREFIX = re.compile(
+    r"^\s*(?:\[\d{1,3}\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+|注\s*\d*[:：])\s*"
+)
 
 _AUXILIARY_TYPES = {
     "header": "header",
+    "page_header": "header",
     "footer": "footer",
+    "page_footer": "footer",
     "page_number": "page_number",
     "aside_text": "aside_text",
+    "page_aside_text": "aside_text",
     "page_footnote": "footnote",
     "footnote": "footnote",
 }
 
 
 def _as_text(value: Any) -> str:
-    """Convert MinerU scalar/list/object content into readable text."""
+    """Flatten MinerU text spans without rendering metadata as user-visible text."""
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, list):
         parts = [_as_text(item) for item in value]
         return "\n".join(part for part in parts if part)
-    if isinstance(value, dict):
-        for key in (
-            "text",
-            "latex",
-            "html",
-            "table_body",
-            "caption",
-            "list_items",
-            "content",
-            "body",
-            "value",
-        ):
-            if key in value:
-                rendered = _as_text(value[key])
-                if rendered:
-                    return rendered
-    return ""
+    if not isinstance(value, dict):
+        return ""
+
+    # MinerU V2 spans commonly look like {"type": "text", "content": "..."}.
+    # Prefer their explicit content field to avoid duplicating hyperlink children.
+    for key in ("text", "latex", "content", "html", "value"):
+        if key in value:
+            rendered = _as_text(value[key])
+            if rendered:
+                return rendered
+
+    # Structured V2 payloads store text in *_content, *_caption and *_items fields.
+    text_fields = (
+        "title_content",
+        "paragraph_content",
+        "math_content",
+        "equation_content",
+        "image_content",
+        "image_caption",
+        "image_footnote",
+        "table_content",
+        "table_body",
+        "table_caption",
+        "table_footnote",
+        "chart_content",
+        "chart_caption",
+        "chart_footnote",
+        "code_content",
+        "code_caption",
+        "code_footnote",
+        "algorithm_content",
+        "algorithm_caption",
+        "algorithm_footnote",
+        "list_items",
+        "index_items",
+        "page_header_content",
+        "page_footer_content",
+        "page_number_content",
+        "page_aside_text_content",
+        "page_footnote_content",
+        "children",
+        "body",
+        "caption",
+    )
+    parts = []
+    for key in text_fields:
+        if key in value:
+            rendered = _as_text(value[key])
+            if rendered:
+                parts.append(rendered)
+    return "\n".join(parts)
 
 
 def _flatten_layout_payload(payload: Any) -> list[dict[str, Any]]:
-    """Read legacy flat lists and page-grouped Content List V2 structures."""
+    """Read flat Content List V1 and page-grouped Content List V2 structures."""
     entries: list[dict[str, Any]] = []
     if isinstance(payload, list):
         for page_index, value in enumerate(payload):
@@ -101,22 +140,29 @@ def _flatten_layout_payload(payload: Any) -> list[dict[str, Any]]:
     return entries
 
 
-def _content_list(artifacts: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the first supported MinerU content-list artifact."""
+def _content_list(artifacts: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+    """Prefer V2's explicit semantic content, falling back to the legacy flat list."""
     json_files = artifacts.get("json")
     if not isinstance(json_files, dict):
-        return []
+        return [], None
+
+    candidates = []
     for name, payload in json_files.items():
         basename = PurePosixPath(str(name)).name.lower()
-        if "content_list" not in basename:
-            continue
+        if "content_list" in basename:
+            is_v2 = "content_list_v2" in basename
+            candidates.append((not is_v2, str(name), payload))
+
+    for _legacy, name, payload in sorted(candidates, key=lambda item: item[0]):
         entries = _flatten_layout_payload(payload)
         if entries:
-            return entries
-    return []
+            return entries, name
+    return [], None
 
 
-def _artifact_diagnostics(artifacts: dict[str, Any]) -> dict[str, Any]:
+def _artifact_diagnostics(
+    artifacts: dict[str, Any], selected_layout_file: str | None = None
+) -> dict[str, Any]:
     """Describe saved OCR files without exposing their potentially sensitive content."""
     json_files = artifacts.get("json")
     markdown_files = artifacts.get("markdown")
@@ -131,7 +177,13 @@ def _artifact_diagnostics(artifacts: dict[str, Any]) -> dict[str, Any]:
     shapes = {}
     for name, payload in json_files.items():
         if isinstance(payload, list):
-            shapes[str(name)] = f"list[{len(payload)}]"
+            if payload and isinstance(payload[0], list):
+                shapes[str(name)] = (
+                    f"page_groups[{len(payload)}], "
+                    f"{sum(len(page) for page in payload if isinstance(page, list))} blocks"
+                )
+            else:
+                shapes[str(name)] = f"list[{len(payload)}]"
         elif isinstance(payload, dict):
             shapes[str(name)] = "object keys: " + ", ".join(
                 str(key) for key in list(payload)[:12]
@@ -143,6 +195,7 @@ def _artifact_diagnostics(artifacts: dict[str, Any]) -> dict[str, Any]:
         "markdown_files": sorted(str(name) for name in markdown_files),
         "json_files": sorted(str(name) for name in json_files),
         "content_list_candidates": candidates,
+        "selected_layout_file": selected_layout_file,
         "json_shapes": shapes,
     }
 
@@ -151,45 +204,99 @@ def _kind(item: dict[str, Any]) -> str:
     value = str(item.get("type") or item.get("block_type") or "text").lower()
     if value in _AUXILIARY_TYPES:
         return _AUXILIARY_TYPES[value]
-    if value == "text" and item.get("text_level", 0):
+    if value in {"text", "paragraph"} and item.get("text_level", 0):
         return "heading"
     aliases = {
         "text": "paragraph",
+        "paragraph": "paragraph",
         "plain_text": "paragraph",
         "title": "heading",
+        "heading": "heading",
         "table": "table",
         "image": "image",
-        "chart": "image",
+        "chart": "chart",
         "equation": "equation",
         "interline_equation": "equation",
+        "equation_interline": "equation",
         "list": "list",
+        "index": "list",
         "code": "code",
-        "paragraph": "paragraph",
-        "heading": "heading",
+        "algorithm": "algorithm",
     }
     return aliases.get(value, "unknown")
 
 
 def _block_text(item: dict[str, Any], block_type: str) -> str:
-    fields = (
-        ("text", "latex", "content")
-        if block_type == "equation"
-        else ("text", "table_body", "table_caption", "table_footnote", "content")
-        if block_type == "table"
-        else (
+    """Extract V1 direct fields or V2 type-specific structured content."""
+    content = item.get("content")
+    nested_fields = {
+        "heading": ("title_content",),
+        "paragraph": ("paragraph_content", "text_content"),
+        "equation": ("math_content", "equation_content"),
+        "table": (
+            "table_content",
+            "table_body",
+            "table_caption",
+            "table_footnote",
+        ),
+        "image": ("image_content", "image_caption", "image_footnote"),
+        "chart": ("chart_content", "chart_caption", "chart_footnote"),
+        "code": ("code_content", "code_caption", "code_footnote"),
+        "algorithm": (
+            "algorithm_content",
+            "algorithm_caption",
+            "algorithm_footnote",
+        ),
+        "list": ("list_items", "index_items"),
+        "header": ("page_header_content", "header_content"),
+        "footer": ("page_footer_content", "footer_content"),
+        "page_number": ("page_number_content",),
+        "aside_text": ("page_aside_text_content", "aside_text_content"),
+        "footnote": ("page_footnote_content", "footnote_content"),
+    }
+    fields_by_type = {
+        "heading": ("text", "title_content"),
+        "paragraph": ("text", "paragraph_content"),
+        "equation": ("text", "latex", "math_content", "equation_content"),
+        "table": ("text", "table_body", "table_caption", "table_footnote"),
+        "image": ("text", "image_caption", "image_footnote"),
+        "chart": ("text", "chart_caption", "chart_footnote"),
+        "code": ("text", "code_body", "code_caption", "code_footnote"),
+        "algorithm": (
             "text",
-            "image_caption",
-            "image_footnote",
-            "chart_caption",
-            "content",
-        )
-        if block_type == "image"
-        else ("text", "footnote", "content")
-    )
-    values = [_as_text(item.get(field)) for field in fields]
-    text = "\n".join(value for value in values if value).strip()
-    if text:
-        return text
+            "algorithm_content",
+            "algorithm_caption",
+            "algorithm_footnote",
+        ),
+        "list": ("text", "list_items", "index_items"),
+        "header": ("text",),
+        "footer": ("text",),
+        "page_number": ("text",),
+        "aside_text": ("text",),
+        "footnote": ("text", "footnote"),
+    }
+    fields = fields_by_type.get(block_type, ("text",))
+    direct = []
+    for field in fields:
+        if field in item:
+            rendered = _as_text(item[field])
+            if rendered:
+                direct.append(rendered)
+    if direct:
+        return "\n".join(direct).strip()
+
+    if isinstance(content, dict):
+        nested = nested_fields.get(block_type, ())
+        values = [_as_text(content[field]) for field in nested if field in content]
+        values = [value for value in values if value]
+        if values:
+            return "\n".join(values).strip()
+    elif content is not None:
+        rendered = _as_text(content)
+        if rendered:
+            return rendered
+
+    # Last resort supports a provider adding a new text-like field without losing it.
     return _as_text(item.get("list_items")) or _as_text(item.get("content"))
 
 
@@ -222,8 +329,8 @@ def build_source_block_payloads(
     page_references: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Map MinerU layout entries to original pages and produce review hints."""
-    entries = _content_list(artifacts)
-    diagnostics = _artifact_diagnostics(artifacts)
+    entries, selected_layout_file = _content_list(artifacts)
+    diagnostics = _artifact_diagnostics(artifacts, selected_layout_file)
     page_reference_count = len(
         [
             reference
@@ -256,6 +363,7 @@ def build_source_block_payloads(
             "mapped_entries": 0,
             "page_reference_count": page_reference_count,
             "blocks_created": 0,
+            "empty_text_entries": 0,
             "unmapped_entries": 0,
             "cleanup_candidate_count": 0,
             "artifact_diagnostics": diagnostics,
@@ -335,6 +443,7 @@ def build_source_block_payloads(
             )
 
     mapped_count = len(payloads)
+    empty_text_count = sum(not payload["text"] for payload in payloads)
     warnings = []
     if unmapped:
         warnings.append("Some layout entries could not be mapped to a source page.")
@@ -342,12 +451,18 @@ def build_source_block_payloads(
         warnings.append(
             "Layout entries were found, but none matched the saved PDF page references."
         )
+    elif empty_text_count:
+        warnings.append(
+            f"{empty_text_count} mapped layout blocks contain no extractable text; "
+            "visual-only blocks may legitimately have captions missing."
+        )
     return payloads, {
-        "layout_source": "content_list.json",
+        "layout_source": selected_layout_file or "content_list",
         "layout_entry_count": len(entries),
         "mapped_entries": mapped_count,
         "page_reference_count": page_reference_count,
         "blocks_created": len(payloads),
+        "empty_text_entries": empty_text_count,
         "unmapped_entries": unmapped,
         "cleanup_candidate_count": len(candidates),
         "cleanup_candidates": candidates,
@@ -359,39 +474,80 @@ def build_source_block_payloads(
 def materialize_source_blocks(
     session: Session, run: ProcessingRun
 ) -> tuple[list[SourceBlock], dict[str, Any]]:
-    """Persist page-linked blocks once for a successful chapter OCR run."""
+    """Reconcile SourceBlocks with parsed artifacts while preserving existing IDs."""
     existing = session.scalars(
         select(SourceBlock)
         .where(SourceBlock.processing_run_id == run.id)
         .order_by(SourceBlock.sort_order, SourceBlock.id)
     ).all()
-    if existing:
-        report = (run.quality_report or {}).get("source_blocks", {})
-        return existing, report
 
     normalized = run.normalized_result if isinstance(run.normalized_result, dict) else {}
     artifacts = normalized.get("artifacts")
     references = normalized.get("page_references")
     if not isinstance(artifacts, dict) or not isinstance(references, list):
-        return [], {
+        report = {
             "layout_source": None,
             "layout_entry_count": 0,
             "mapped_entries": 0,
             "page_reference_count": 0,
             "blocks_created": 0,
+            "empty_text_entries": 0,
             "unmapped_entries": 0,
             "cleanup_candidate_count": 0,
             "warnings": [
                 "OCR run does not contain normalized MinerU artifacts/page references."
             ],
         }
+        if existing:
+            report["warnings"].append(
+                "Existing SourceBlocks were preserved because no replacement layout "
+                "was available."
+            )
+            return [block for block in existing if block.is_active], report
+        return [], report
 
     payloads, report = build_source_block_payloads(artifacts, references)
-    for payload in payloads:
-        payload.pop("source_digest", None)
-        payload.pop("entry_index", None)
-        session.add(
-            SourceBlock(
+    if not payloads:
+        if existing:
+            report["warnings"].append(
+                "Existing SourceBlocks were preserved because no usable layout entries "
+                "were extracted."
+            )
+            return [block for block in existing if block.is_active], report
+        return [], report
+
+    # The old parser could create one empty-text row per layout item. Repair those rows
+    # in place, preserving IDs and any existing evidence relations that reference them.
+    # Temporary keys prevent uniqueness conflicts while deterministic keys are replaced.
+    for block in existing:
+        block.block_key = f"rebuild:{block.id}"
+    if existing:
+        session.flush()
+
+    active_blocks: list[SourceBlock] = []
+    for index, payload in enumerate(payloads):
+        if index < len(existing):
+            block = existing[index]
+            changed = (
+                block.text != payload["text"]
+                or block.block_type != payload["block_type"]
+                or block.page_id != payload["page_id"]
+                or block.content_hash != payload["content_hash"]
+            )
+            block.chapter_id = run.chapter_id
+            block.page_id = payload["page_id"]
+            block.block_type = payload["block_type"]
+            block.text = payload["text"]
+            block.bbox = payload["bbox"]
+            block.confidence = payload["confidence"]
+            block.content_hash = payload["content_hash"]
+            block.block_key = payload["block_key"]
+            block.sort_order = payload["sort_order"]
+            block.is_active = True
+            if changed:
+                block.version += 1
+        else:
+            block = SourceBlock(
                 chapter_id=run.chapter_id,
                 page_id=payload["page_id"],
                 processing_run_id=run.id,
@@ -405,16 +561,16 @@ def materialize_source_blocks(
                 sort_order=payload["sort_order"],
                 is_active=True,
             )
-        )
+            session.add(block)
+        active_blocks.append(block)
+
+    for block in existing[len(payloads):]:
+        block.block_key = f"inactive:{block.id}"
+        block.is_active = False
+        block.version += 1
+
     session.flush()
-    return (
-        session.scalars(
-            select(SourceBlock)
-            .where(SourceBlock.processing_run_id == run.id)
-            .order_by(SourceBlock.sort_order, SourceBlock.id)
-        ).all(),
-        report,
-    )
+    return active_blocks, report
 
 
 def render_anchored_markdown(
