@@ -431,7 +431,7 @@
 - 教材目录与页面：Book、Chapter、Section、ChapterPage。
 - 处理与证据：ProcessingRun、SourceBlock。
 - 知识结构：KnowledgeNode、KnowledgeSource（知识点与原文块多对多）。
-- 关系与审核：Relation、Figure、AuditIssue、AuditEvent。
+- 关系与审核：Relation、RelationEvidence、Figure、AuditIssue、AuditEvent。
 - 题库与复习预留：Question、QuestionSource、ReviewState、AnswerLog。
 - 初始 Repository/Service：BookRepository、BookService。
 - Alembic 配置与初始迁移：alembic.ini、backend/alembic。
