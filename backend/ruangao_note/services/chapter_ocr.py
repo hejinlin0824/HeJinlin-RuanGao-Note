@@ -160,6 +160,7 @@ class ChapterOCRService:
                 "language": result["language"],
                 "pdf_sha256": pdf_sha256,
                 "pdf_size_bytes": len(pdf_bytes),
+                "page_count": len(page_references),
                 "page_references": [asdict(item) for item in page_references],
             }
             run.normalized_result = {
