@@ -15,6 +15,8 @@ from ruangao_note.domain.models import (
     KnowledgeSource,
     ProcessingRun,
     Relation,
+    RelationEvidence,
+    Relation,
     Section,
     SourceBlock,
 )
@@ -41,6 +43,7 @@ def test_initial_schema_contains_all_domain_tables() -> None:
             "knowledge_nodes",
             "knowledge_sources",
             "relations",
+            "relation_evidence",
             "figures",
             "audit_issues",
             "audit_events",
@@ -89,14 +92,23 @@ def test_knowledge_nodes_and_source_blocks_are_many_to_many() -> None:
         node_b = KnowledgeNode(chapter=chapter, name="计算机软件")
         node_a.sources.append(KnowledgeSource(source_block=source, role="definition"))
         node_b.sources.append(KnowledgeSource(source_block=source, role="evidence"))
+        relation = Relation(
+            source_node=node_a,
+            target_node=node_b,
+            relation_type="contrast",
+            origin="text_explicit",
+            status="needs_review",
+        )
+        relation.evidence.append(RelationEvidence(source_block=source, role="support"))
 
-        session.add_all([node_a, node_b])
+        session.add_all([node_a, node_b, relation])
         session.commit()
 
         assert len(node_a.sources) == 1
         assert len(node_b.sources) == 1
         assert node_a.sources[0].source_block_id == source.id
         assert node_b.sources[0].source_block_id == source.id
+        assert relation.evidence[0].source_block_id == source.id
     finally:
         session.close()
         engine.dispose()
