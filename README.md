@@ -4,13 +4,14 @@
 
 ## 当前阶段
 
-TP-01、TP-02 已完成本地验收。当前在 dev 分支实施 TP-03：教材图片导入与页面管理；待 Windows 环境完成本轮验收。所有正式知识、关系和题目必须能回溯到教材原文来源块。
+TP-01～TP-03 已完成验收。当前在 dev 分支实施 TP-04：OCR Provider 与图像预处理；首版提供 Mock Provider 验证处理链路，尚未接入真实 OCR 引擎。所有正式知识、关系和题目必须能回溯到教材原文来源块。
 
 ## 文档
 
 - [产品规格说明书（Spec）](docs/PROJECT_SPEC.md)
 - [任务包与实施路线图](docs/TASK_PACKAGES.md)
 - [TP-03 图片导入本地验收说明](docs/TP03_ACCEPTANCE.md)
+- [TP-04 OCR 本地验收说明](docs/TP04_ACCEPTANCE.md)
 
 ## 技术基线
 
@@ -59,6 +60,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 - `GET /api/chapters/{chapter_id}/pages/{page_id}/image`：预览原始图片。
 
 默认图片目录为 `./data/uploads`，不进入 Git。可通过 `STORAGE_DIR`、`MAX_IMAGE_BYTES`、`MAX_BATCH_UPLOAD_BYTES`、`MAX_BATCH_UPLOAD_COUNT`、`MAX_IMAGE_PIXELS` 配置上传限制。
+
+OCR 处理 API（TP-04 首版）：
+
+- `POST /api/chapters/{chapter_id}/pages/{page_id}/ocr`：为指定活动页面创建一次 OCR 处理尝试。
+- `GET /api/chapters/{chapter_id}/pages/{page_id}/ocr-runs`：查询该页面的 OCR 历史记录。
+- 每次 POST 都会新建 ProcessingRun；失败记录不会覆盖，重复 POST 即创建新的重试尝试。
+- 默认使用 `mock` Provider，返回明确的模拟标记和空文本块，不会生成虚构 OCR 文本。
+- 标准化结果保留文本块类型、顺序、归一化 bbox 和置信度；Provider 原始响应与质量报告分别保存。
+- 当前图像预处理为内存派生图，不会改写原始教材图片；透视校正和真实 OCR 引擎留待后续接入。
 
 数据库初始化和检查：
 
