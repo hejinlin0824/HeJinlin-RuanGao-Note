@@ -89,39 +89,92 @@ try {
     Section "5. TLS 1.2 with certificate validation"
     foreach ($h in $hostsToCheck) { Test-Tls $h }
 
-    Section "6. HTTPS via curl.exe"
+    Section "6. HTTPS via curl.exe (direct and explicit local proxy)"
     $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
     if ($curl) {
+        Write-Host "curl_path=$($curl.Source)"
+        & curl.exe --version | Select-Object -First 1
         foreach ($h in $hostsToCheck) {
             Write-Host ""
-            Write-Host "[curl] https://$h/"
-            & curl.exe -I --connect-timeout 10 --max-time 20 --max-redirs 0 "https://$h/" 2>&1
+            Write-Host "[curl direct] https://$h/"
+            & curl.exe -sS -D - -o NUL -w "`nHTTP=%{http_code} REMOTE_IP=%{remote_ip} EXIT=%{exitcode}`n" --connect-timeout 10 --max-time 30 "https://$h/" 2>&1
             Write-Host "curl_exit_code=$LASTEXITCODE"
         }
+        $proxyAddress = $null
+        try {
+            $internetSettings = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            if ($internetSettings.ProxyEnable -eq 1 -and $internetSettings.ProxyServer) {
+                $rawProxy = [string]$internetSettings.ProxyServer
+                if ($rawProxy -match "^(?:http=)?([^;]+)") { $proxyAddress = $Matches[1] }
+                if ($proxyAddress -and $proxyAddress -notmatch "^[a-zA-Z][a-zA-Z0-9+.-]*://") {
+                    $proxyAddress = "http://$proxyAddress"
+                }
+            }
+        } catch {}
+        if ($proxyAddress) {
+            Write-Host ""
+            Write-Host "[curl explicit proxy] proxy endpoint=$($proxyAddress -replace '://[^/@]+@', '://[credentials-hidden]@')"
+            foreach ($h in $hostsToCheck) {
+                Write-Host "[curl proxy] https://$h/"
+                & curl.exe -sS -D - -o NUL -w "`nHTTP=%{http_code} REMOTE_IP=%{remote_ip} EXIT=%{exitcode}`n" --proxy $proxyAddress --connect-timeout 10 --max-time 30 "https://$h/" 2>&1
+                Write-Host "curl_exit_code=$LASTEXITCODE"
+            }
+        } else { Write-Host "No enabled current-user proxy endpoint found; explicit proxy curl test skipped." }
     } else { Write-Host "curl.exe not found; skipped." }
 
-    Section "7. Python httpx (proxy enabled vs disabled)"
+    Section "7. Python httpx (direct vs explicit local proxy)"
     $python = Get-Command python -ErrorAction SilentlyContinue
     if ($python) {
+        Write-Host "python_path=$($python.Source)"
+        $proxyForPython = $null
+        try {
+            $internetSettings = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            if ($internetSettings.ProxyEnable -eq 1 -and $internetSettings.ProxyServer) {
+                $rawProxy = [string]$internetSettings.ProxyServer
+                if ($rawProxy -match "^(?:http=)?([^;]+)") { $proxyForPython = $Matches[1] }
+                if ($proxyForPython -and $proxyForPython -notmatch "^[a-zA-Z][a-zA-Z0-9+.-]*://") {
+                    $proxyForPython = "http://$proxyForPython"
+                }
+            }
+        } catch {}
         $code = @'
 import httpx
-for host in ("mineru.net", "cdn-mineru.openxlab.org.cn"):
-    for trust_env in (True, False):
-        print(f"\n[httpx] host={host}, trust_env={trust_env}")
+import sys
+print("python_version=", sys.version.replace("\\n", " "))
+print("httpx_version=", httpx.__version__)
+hosts = ("mineru.net", "cdn-mineru.openxlab.org.cn")
+for host in hosts:
+    for mode, kwargs in (("direct", {"trust_env": False}),):
+        print(f"\\n[httpx] host={host} mode={mode}", flush=True)
         try:
-            with httpx.Client(
-                timeout=httpx.Timeout(15.0, connect=8.0),
-                follow_redirects=False,
-                trust_env=trust_env,
-            ) as client:
-                r = client.get(f"https://{host}/")
-            print("HTTP", r.status_code, "server=", r.headers.get("server"))
-            print("PASS: HTTPS request received an HTTP response")
+            with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=False, **kwargs) as client:
+                response = client.get(f"https://{host}/")
+            print("HTTP=", response.status_code, "server=", response.headers.get("server"), flush=True)
         except Exception as exc:
-            print("FAIL:", type(exc).__name__, str(exc))
+            print("FAIL:", type(exc).__name__, str(exc), flush=True)
+proxy = __PROXY__
+if proxy:
+    for host in hosts:
+        print(f"\\n[httpx] host={host} mode=explicit_proxy", flush=True)
+        try:
+            with httpx.Client(proxy=proxy, trust_env=False, timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=False) as client:
+                response = client.get(f"https://{host}/")
+            print("HTTP=", response.status_code, "server=", response.headers.get("server"), flush=True)
+        except Exception as exc:
+            print("FAIL:", type(exc).__name__, str(exc), flush=True)
+else:
+    print("No enabled current-user proxy endpoint; explicit proxy httpx test skipped.", flush=True)
 '@
-        $code | & python -
-        Write-Host "python_exit_code=$LASTEXITCODE"
+        $proxyLiteral = if ($proxyForPython) { "'" + $proxyForPython.Replace("\\", "\\\\").Replace("'", "\\'") + "'" } else { "None" }
+        $code = $code.Replace("__PROXY__", $proxyLiteral)
+        $tempPython = Join-Path $env:TEMP ("mineru-network-" + [guid]::NewGuid().ToString("N") + ".py")
+        try {
+            [System.IO.File]::WriteAllText($tempPython, $code, (New-Object System.Text.UTF8Encoding($false)))
+            & $python.Source $tempPython 2>&1
+            Write-Host "python_exit_code=$LASTEXITCODE"
+        } finally {
+            if (Test-Path $tempPython) { Remove-Item $tempPython -Force -ErrorAction SilentlyContinue }
+        }
     } else { Write-Host "python.exe not found; skipped." }
 
     Section "8. Interpretation"
