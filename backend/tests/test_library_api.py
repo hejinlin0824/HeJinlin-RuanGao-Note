@@ -21,7 +21,8 @@ def png_bytes(color: tuple[int, int, int]) -> bytes:
 def test_complete_book_chapter_and_page_api_flow(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "uploads"))
     get_settings.cache_clear()
-    engine = create_database_engine(f"sqlite:///{tmp_path / 'api-test.db'}")
+    database_path = (tmp_path / "api-test.db").as_posix()
+    engine = create_database_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
