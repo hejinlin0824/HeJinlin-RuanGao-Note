@@ -3,8 +3,8 @@
 from io import BytesIO
 
 from fastapi.testclient import TestClient
-from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
+from PIL import Image
 
 from ruangao_note.core.config import get_settings
 from ruangao_note.db.base import Base
