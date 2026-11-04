@@ -32,6 +32,8 @@ class DuplicatePageError(ValueError):
 class PageService:
     """Coordinate database page metadata with immutable image files."""
 
+    ARCHIVED_ORDER_BASE = 1_000_000_000
+
     def __init__(self, session: Session, storage: ImageStorage | None = None) -> None:
         self.session = session
         self.storage = storage or ImageStorage()
@@ -137,7 +139,7 @@ class PageService:
         """Soft-delete a page and retain its original image and database record."""
         page = self._get_active_page(chapter_id, page_id)
         pages = self.list_pages(chapter_id)
-        offset = self._max_order(chapter_id) + len(pages) + 100
+        offset = max(self._max_order(chapter_id) + 1, self.ARCHIVED_ORDER_BASE)
         page.status = "archived"
         page.sort_order = offset
         self.session.flush()
@@ -169,7 +171,7 @@ class PageService:
             self.storage.remove(stored.storage_path)
             raise DuplicatePageError("Replacement image duplicates another active page.")
         original_order = old_page.sort_order
-        offset = self._max_order(chapter_id) + 100
+        offset = max(self._max_order(chapter_id) + 1, self.ARCHIVED_ORDER_BASE)
         try:
             old_page.sort_order = offset
             old_page.status = "archived"
