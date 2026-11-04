@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     mineru_language: str = "ch"
     mineru_poll_interval_seconds: float = Field(default=5.0, gt=0, le=60)
     mineru_max_wait_seconds: int = Field(default=1500, gt=0, le=7200)
+    # Optional HTTP(S) proxy for result ZIP downloads; unset means direct.
+    mineru_download_proxy: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
