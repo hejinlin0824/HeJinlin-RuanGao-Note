@@ -98,6 +98,23 @@ def test_replace_keeps_previous_original_and_creates_new_page_row(page_context):
     assert replacement.sort_order == original_order
 
 
+def test_storage_rejects_path_traversal(page_context):
+    _, _, storage = page_context
+    with pytest.raises(ValueError, match="escapes"):
+        storage.resolve("../outside.png")
+
+
+def test_failed_batch_removes_files_created_earlier_in_the_batch(page_context):
+    _, chapter, storage = page_context
+    service = PageService(_, storage)
+    with pytest.raises(InvalidImageError):
+        service.upload(
+            chapter.id,
+            [PageUpload("valid.png", png_bytes()), PageUpload("invalid.png", b"broken")],
+        )
+    assert list(storage.root.rglob("*.png")) == []
+
+
 def test_archive_retains_file_and_compacts_active_order(page_context):
     session, chapter, storage = page_context
     service = PageService(session, storage)
