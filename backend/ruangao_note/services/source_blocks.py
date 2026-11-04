@@ -378,7 +378,7 @@ def build_source_block_payloads(
     }
     payloads: list[dict[str, Any]] = []
     unmapped = 0
-    repeated_pages: dict[str, set[str]] = defaultdict(set)
+    repeated_pages: dict[tuple[str, str], set[str]] = defaultdict(set)
     candidate_reasons: dict[str, list[str]] = {}
 
     for entry_index, item in enumerate(entries):
@@ -409,27 +409,54 @@ def build_source_block_payloads(
             "entry_index": entry_index,
             "block_key_base": occurrence_key,
         }
+        if not text:
+            content = item.get("content")
+            content_keys = sorted(str(key) for key in content) if isinstance(content, dict) else []
+            media_path = item.get("img_path") or item.get("image_path")
+            if not media_path and isinstance(content, dict):
+                media_path = content.get("img_path") or content.get("image_path")
+            payload["empty_diagnostic"] = {
+                "entry_index": entry_index,
+                "raw_type": str(item.get("type") or item.get("block_type") or "unknown"),
+                "top_level_keys": sorted(str(key) for key in item),
+                "content_keys": content_keys,
+                "media_path": str(media_path) if media_path else None,
+                "visual_only": block_type in {"image", "chart", "table"},
+            }
         payloads.append(payload)
         normalized_line = " ".join(text.split()).casefold()
         if text and len(normalized_line) <= 140:
-            repeated_pages[normalized_line].add(str(reference["chapter_page_id"]))
+            repeated_pages[(block_type, normalized_line)].add(
+                str(reference["chapter_page_id"])
+            )
         reasons = _candidate_reasons(block_type, text)
         if reasons:
             candidate_reasons[occurrence_key] = reasons
 
     repeated_lines = {
-        line for line, page_ids in repeated_pages.items() if len(page_ids) >= 2
+        key for key, page_ids in repeated_pages.items() if len(page_ids) >= 2
     }
     occurrence_counts: dict[str, int] = defaultdict(int)
     candidates = []
+    empty_block_diagnostics = []
     for order, payload in enumerate(payloads):
         base = payload.pop("block_key_base")
         occurrence_counts[base] += 1
         payload["block_key"] = f"{base}:{occurrence_counts[base]}"
         payload["sort_order"] = order
+        empty_diagnostic = payload.pop("empty_diagnostic", None)
+        if empty_diagnostic is not None:
+            empty_block_diagnostics.append(
+                {
+                    **empty_diagnostic,
+                    "block_key": payload["block_key"],
+                    "page_id": payload["page_id"],
+                    "block_type": payload["block_type"],
+                }
+            )
         normalized_line = " ".join(payload["text"].split()).casefold()
         reasons = list(candidate_reasons.get(base, []))
-        if normalized_line in repeated_lines:
+        if (payload["block_type"], normalized_line) in repeated_lines:
             reasons.append("repeated_short_text_across_pages")
         if reasons:
             candidates.append(
@@ -444,6 +471,10 @@ def build_source_block_payloads(
 
     mapped_count = len(payloads)
     empty_text_count = sum(not payload["text"] for payload in payloads)
+    visual_only_empty_count = sum(
+        1 for item in empty_block_diagnostics if item["visual_only"]
+    )
+    unexpected_empty_count = empty_text_count - visual_only_empty_count
     warnings = []
     if unmapped:
         warnings.append("Some layout entries could not be mapped to a source page.")
@@ -451,10 +482,13 @@ def build_source_block_payloads(
         warnings.append(
             "Layout entries were found, but none matched the saved PDF page references."
         )
-    elif empty_text_count:
+    if visual_only_empty_count:
+        # Visual blocks can be valid evidence even when no caption text was recognized.
+        pass
+    if unexpected_empty_count:
         warnings.append(
-            f"{empty_text_count} mapped layout blocks contain no extractable text; "
-            "visual-only blocks may legitimately have captions missing."
+            f"{unexpected_empty_count} non-visual layout blocks contain no extractable text. "
+            "Inspect empty_block_diagnostics before treating them as valid."
         )
     return payloads, {
         "layout_source": selected_layout_file or "content_list",
@@ -463,6 +497,9 @@ def build_source_block_payloads(
         "page_reference_count": page_reference_count,
         "blocks_created": len(payloads),
         "empty_text_entries": empty_text_count,
+        "visual_only_empty_entries": visual_only_empty_count,
+        "unexpected_empty_text_entries": unexpected_empty_count,
+        "empty_block_diagnostics": empty_block_diagnostics,
         "unmapped_entries": unmapped,
         "cleanup_candidate_count": len(candidates),
         "cleanup_candidates": candidates,
