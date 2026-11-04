@@ -19,12 +19,12 @@ from sqlalchemy.orm import Session
 from ruangao_note.domain.models import ProcessingRun, SourceBlock
 
 _WATERMARK_PATTERNS = (
-    re.compile(r"\\barxiv\\s*:\\s*\\d{4}\\.\\d{4,5}\\b", re.IGNORECASE),
-    re.compile(r"\\barxiv\\.org/(?:abs|pdf)/", re.IGNORECASE),
-    re.compile(r"\\bdoi\\s*:\\s*10\\.\\d{4,9}/", re.IGNORECASE),
-    re.compile(r"\\bpreprint\\b", re.IGNORECASE),
+    re.compile(r"\barxiv\s*:\s*\d{4}\.\d{4,5}\b", re.IGNORECASE),
+    re.compile(r"\barxiv\.org/(?:abs|pdf)/", re.IGNORECASE),
+    re.compile(r"\bdoi\s*:\s*10\.\d{4,9}/", re.IGNORECASE),
+    re.compile(r"\bpreprint\b", re.IGNORECASE),
 )
-_FOOTNOTE_PREFIX = re.compile(r"^\\s*(?:\\[\\d{1,3}\\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+|注\\s*\\d*[:：])\\s*")
+_FOOTNOTE_PREFIX = re.compile(r"^\s*(?:\[\d{1,3}\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+|注\s*\d*[:：])\s*")
 
 _AUXILIARY_TYPES = {
     "header": "header",
@@ -42,7 +42,7 @@ def _as_text(value: Any) -> str:
         return value.strip()
     if isinstance(value, list):
         parts = [_as_text(item) for item in value]
-        return "\\n".join(part for part in parts if part)
+        return "\n".join(part for part in parts if part)
     if isinstance(value, dict):
         for key in (
             "text",
@@ -187,7 +187,7 @@ def _block_text(item: dict[str, Any], block_type: str) -> str:
         else ("text", "footnote", "content")
     )
     values = [_as_text(item.get(field)) for field in fields]
-    text = "\\n".join(value for value in values if value).strip()
+    text = "\n".join(value for value in values if value).strip()
     if text:
         return text
     return _as_text(item.get("list_items")) or _as_text(item.get("content"))
@@ -441,7 +441,7 @@ def render_anchored_markdown(
         elif block.block_type == "heading":
             rendered.append(f"## {text}")
         elif block.block_type == "equation":
-            rendered.append(f"$$\\n{text}\\n$$")
+            rendered.append(f"$$\n{text}\n$$")
         elif block.block_type == "table":
             rendered.append(text)
         elif block.block_type == "image":
@@ -451,4 +451,4 @@ def render_anchored_markdown(
         else:
             rendered.append(text)
         rendered.append("")
-    return "\\n".join(rendered).strip()
+    return "\n".join(rendered).strip()
