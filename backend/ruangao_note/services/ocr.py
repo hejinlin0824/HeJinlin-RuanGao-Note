@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from io import BytesIO
 from typing import Protocol
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -97,9 +97,9 @@ def preprocess_image(original_bytes: bytes, *, rotation: int = 0) -> tuple[bytes
     if rotation:
         image = image.rotate(-rotation, expand=True)
     gray = ImageOps.grayscale(image)
-    grayscale_stddev = float(Image.Stat(gray).stddev[0])
+    grayscale_stddev = float(ImageStat.Stat(gray).stddev[0])
     edges = gray.filter(ImageFilter.FIND_EDGES)
-    edge_stddev = float(Image.Stat(edges).stddev[0])
+    edge_stddev = float(ImageStat.Stat(edges).stddev[0])
     warnings: list[str] = []
     if min(image.size) < 900:
         warnings.append("low_resolution")
