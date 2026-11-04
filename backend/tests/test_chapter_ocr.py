@@ -626,8 +626,7 @@ def test_mineru_v2_semantic_span_fields_are_extracted_and_v2_is_preferred():
                         "type": "paragraph",
                         "content": {
                             "paragraph_content": [
-                                {"type": "text", "content": "信息化是一个"}
-                                ,
+                                {"type": "text", "content": "信息化是一个"},
                                 {"type": "text", "content": "持续演进的过程。"},
                             ]
                         },
@@ -671,7 +670,7 @@ def test_mineru_v2_semantic_span_fields_are_extracted_and_v2_is_preferred():
         "footnote",
     ]
     assert blocks[0]["text"] == "第一章 信息化发展"
-    assert blocks[1]["text"] == "信息化是一个\\n持续演进的过程。"
+    assert blocks[1]["text"] == "信息化是一个\n持续演进的过程。"
     assert blocks[2]["text"] == "E = mc^2"
     assert blocks[3]["text"] == "脚注内容"
     assert report["artifact_diagnostics"]["selected_layout_file"] == (
