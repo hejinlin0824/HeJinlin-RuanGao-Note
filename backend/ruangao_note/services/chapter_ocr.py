@@ -21,6 +21,10 @@ class ChapterOCRNotFoundError(LookupError):
     """Raised when a chapter has no active pages or does not exist."""
 
 
+class ChapterOCRResumeConflictError(ValueError):
+    """Raised when an OCR run cannot be resumed safely."""
+
+
 @dataclass(frozen=True)
 class PDFPageReference:
     pdf_page_index: int
@@ -115,7 +119,7 @@ class ChapterOCRService:
         raw = run.raw_result if isinstance(run.raw_result, dict) else {}
         batch_id = raw.get("batch_id")
         if run.status != "failed" or not batch_id:
-            raise ChapterOCRNotFoundError(
+            raise ChapterOCRResumeConflictError(
                 "Only failed MinerU runs with a saved batch_id can be resumed."
             )
 
