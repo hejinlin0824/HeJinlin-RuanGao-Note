@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
     database_url: str = "sqlite:///./data/ruangao_note.db"
+    storage_dir: str = "./data/uploads"
+    max_image_bytes: int = 20 * 1024 * 1024
+    max_batch_upload_bytes: int = 300 * 1024 * 1024
+    max_batch_upload_count: int = 30
+    max_image_pixels: int = 60_000_000
 
     model_config = SettingsConfigDict(
         env_file=".env",
