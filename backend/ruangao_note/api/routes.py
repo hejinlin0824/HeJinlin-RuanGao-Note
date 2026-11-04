@@ -15,6 +15,7 @@ from ruangao_note.api.schemas import (
     PageNumberUpdate,
     PageRead,
     PageReorder,
+    PageRotationUpdate,
     PageUploadResult,
 )
 from ruangao_note.core.config import get_settings
@@ -205,6 +206,24 @@ async def replace_page(
         raise HTTPException(status_code=415, detail=str(exc)) from exc
     except DuplicatePageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/chapters/{chapter_id}/pages/{page_id}/rotation",
+    response_model=PageRead,
+)
+def update_page_rotation(
+    chapter_id: str,
+    page_id: str,
+    payload: PageRotationUpdate,
+    session: Session = Depends(get_db),
+) -> ChapterPage:
+    try:
+        return PageService(session).update_rotation(chapter_id, page_id, payload.rotation)
+    except PageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
