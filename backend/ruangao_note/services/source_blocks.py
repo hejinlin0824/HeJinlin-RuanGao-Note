@@ -268,11 +268,22 @@ def materialize_source_blocks(
     )
 
 
-def render_anchored_markdown(blocks: list[SourceBlock]) -> str:
-    """Render a conservative Markdown view with stable, reviewable block anchors."""
+def render_anchored_markdown(
+    blocks: list[SourceBlock], report: dict[str, Any] | None = None
+) -> str:
+    """Render Markdown with stable anchors and non-destructive cleanup review markers."""
+    candidates = (report or {}).get("cleanup_candidates", [])
+    reasons_by_key = {
+        item.get("block_key"): item.get("reasons", [])
+        for item in candidates
+        if isinstance(item, dict)
+    }
     rendered = []
     for block in blocks:
         rendered.append(f"<!-- source:{block.block_key} -->")
+        reasons = reasons_by_key.get(block.block_key, [])
+        if reasons:
+            rendered.append(f"<!-- cleanup-review: {', '.join(reasons)}; not removed -->")
         text = block.text.strip()
         if not text:
             rendered.append(f"<!-- {block.block_type} block; inspect original page -->")
