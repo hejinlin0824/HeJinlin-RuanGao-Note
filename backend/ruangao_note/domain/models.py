@@ -56,7 +56,9 @@ class Chapter(TimestampMixin, Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    book_id: Mapped[str] = mapped_column(ForeignKey("books.id", ondelete="RESTRICT"), nullable=False)
+    book_id: Mapped[str] = mapped_column(
+        ForeignKey("books.id", ondelete="RESTRICT"), nullable=False
+    )
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
