@@ -7,13 +7,13 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
