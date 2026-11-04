@@ -48,11 +48,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 教材图片导入 API（TP-03）：
 
 - `POST /api/books`、`GET /api/books`：创建和分页查询教材。
-- `POST /api/books/{book_id}/chapters`：创建章节。
+- `POST /api/books/{book_id}/chapters`、`GET /api/books/{book_id}/chapters`：创建和查询章节。
 - `POST /api/chapters/{chapter_id}/pages`：批量上传 1–30 张 JPEG/PNG/WEBP/TIFF 图片。
 - `GET /api/chapters/{chapter_id}/pages`：按页序查询页面。
 - `PUT /api/chapters/{chapter_id}/pages/order`：提交完整页面 ID 顺序。
 - `PATCH /api/chapters/{chapter_id}/pages/{page_id}/number`：校正教材印刷页码。
+- `PATCH /api/chapters/{chapter_id}/pages/{page_id}/rotation`：更新显示旋转角度，不修改原图。
 - `PUT /api/chapters/{chapter_id}/pages/{page_id}/replace`：以新页面记录替换，旧原图保留。
 - `DELETE /api/chapters/{chapter_id}/pages/{page_id}`：归档页面，不物理删除原图。
 - `GET /api/chapters/{chapter_id}/pages/{page_id}/image`：预览原始图片。
