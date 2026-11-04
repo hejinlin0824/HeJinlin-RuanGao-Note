@@ -252,7 +252,11 @@ def test_mineru_content_list_maps_blocks_and_flags_cleanup_candidates_without_de
                  "text": "第一章 系统架构"},
                 {"type": "text", "page_idx": 0, "text": "arXiv: 2401.12345 论文水印"},
                 {"type": "footnote", "page_idx": 0, "text": "[1] 这是脚注内容"},
-                {"type": "table", "page_idx": 0, "table_body": "<table><tr><td>A</td></tr></table>"},
+                {
+                    "type": "table",
+                    "page_idx": 0,
+                    "table_body": "<table><tr><td>A</td></tr></table>",
+                },
                 {"type": "equation", "page_idx": 1, "text": "E = mc^2"},
                 {"type": "text", "page_idx": 1, "text": "版权所有 示例教材"},
                 {"type": "image", "page_idx": 1, "image_caption": ["图 1：系统结构图"]},
