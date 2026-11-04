@@ -1,7 +1,7 @@
 """Persist normalized OCR output and image quality diagnostics."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0003_ocr_results"
 down_revision = "0002_page_replacement"
@@ -10,7 +10,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    existing = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("processing_runs")}
+    existing = {\n        column["name"]\n        for column in sa.inspect(op.get_bind()).get_columns("processing_runs")\n    }
     if "normalized_result" not in existing:
         op.add_column("processing_runs", sa.Column("normalized_result", sa.JSON(), nullable=True))
     if "quality_report" not in existing:
