@@ -1,11 +1,11 @@
 """Application-service tests."""
 
 import pytest
+from sqlalchemy.orm import Session
 
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine
 from ruangao_note.services.books import BookService
-from sqlalchemy.orm import Session
 
 
 def test_book_service_normalizes_title_and_persists_record() -> None:
