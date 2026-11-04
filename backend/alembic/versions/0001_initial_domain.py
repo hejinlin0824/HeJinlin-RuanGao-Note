@@ -6,7 +6,6 @@ historical migrations remain immutable.
 """
 
 from alembic import op
-
 from ruangao_note.db.base import Base
 from ruangao_note.domain import models as _models  # noqa: F401
 
