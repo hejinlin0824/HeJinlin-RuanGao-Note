@@ -4,8 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ruangao_note.core.config import get_settings
 from ruangao_note.db.session import get_db
 from ruangao_note.domain.models import ProcessingRun
+from ruangao_note.services.chapter_ocr import (
+    ChapterOCRNotFoundError,
+    ChapterOCRService,
+)
 from ruangao_note.services.ocr import OCRPageNotFoundError, OCRService
 
 router = APIRouter(prefix="/api", tags=["ocr"])
@@ -31,11 +36,45 @@ def _run_payload(run: ProcessingRun) -> dict[str, object]:
     }
 
 
+@router.post("/chapters/{chapter_id}/ocr")
+def run_chapter_ocr(
+    chapter_id: str, session: Session = Depends(get_db)
+) -> dict[str, object]:
+    """Parse all active pages in one chapter-level MinerU batch task."""
+    settings = get_settings()
+    if not settings.mineru_token.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="MinerU token is not configured. Set MINERU_TOKEN in the local .env file.",
+        )
+    try:
+        run = ChapterOCRService(session).process_chapter(chapter_id)
+    except ChapterOCRNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _run_payload(run)
+
+
+@router.get("/chapters/{chapter_id}/ocr-runs")
+def list_chapter_ocr_runs(
+    chapter_id: str, session: Session = Depends(get_db)
+) -> list[dict[str, object]]:
+    """Return newest-first chapter-level OCR attempts."""
+    runs = session.scalars(
+        select(ProcessingRun)
+        .where(
+            ProcessingRun.chapter_id == chapter_id,
+            ProcessingRun.task_type == "chapter_ocr",
+        )
+        .order_by(ProcessingRun.created_at.desc(), ProcessingRun.id.desc())
+    ).all()
+    return [_run_payload(run) for run in runs]
+
+
 @router.post("/chapters/{chapter_id}/pages/{page_id}/ocr")
 def run_page_ocr(
     chapter_id: str, page_id: str, session: Session = Depends(get_db)
 ) -> dict[str, object]:
-    """Create a new OCR attempt. Calling again is an explicit retry/new version."""
+    """Create a new mock OCR attempt for a single page."""
     try:
         run = OCRService(session).process_page(chapter_id, page_id)
     except OCRPageNotFoundError as exc:
