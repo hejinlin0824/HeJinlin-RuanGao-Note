@@ -70,7 +70,7 @@ try {
     Write-Host "Current-user Internet Settings:"
     try {
         $p = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-        Write-Host "ProxyEnable=$($p.ProxyEnable); ProxyServer=$($p.ProxyServer); AutoConfigURL=$($p.AutoConfigURL)"
+        Write-Host "ProxyEnable=$($p.ProxyEnable); ProxyServer=$(if ($p.ProxyServer) { 'configured (value hidden)' } else { 'not set' }); AutoConfigURL=$(if ($p.AutoConfigURL) { 'configured (value hidden)' } else { 'not set' })"
     } catch { Write-Host "Could not read current-user proxy settings." }
 
     Section "3. DNS"
@@ -140,12 +140,12 @@ try {
         $code = @'
 import httpx
 import sys
-print("python_version=", sys.version.replace("\\n", " "))
+print("python_version=", sys.version.replace("\n", " "))
 print("httpx_version=", httpx.__version__)
 hosts = ("mineru.net", "cdn-mineru.openxlab.org.cn")
 for host in hosts:
     for mode, kwargs in (("direct", {"trust_env": False}),):
-        print(f"\\n[httpx] host={host} mode={mode}", flush=True)
+        print(f"\n[httpx] host={host} mode={mode}", flush=True)
         try:
             with httpx.Client(timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=False, **kwargs) as client:
                 response = client.get(f"https://{host}/")
@@ -155,7 +155,7 @@ for host in hosts:
 proxy = __PROXY__
 if proxy:
     for host in hosts:
-        print(f"\\n[httpx] host={host} mode=explicit_proxy", flush=True)
+        print(f"\n[httpx] host={host} mode=explicit_proxy", flush=True)
         try:
             with httpx.Client(proxy=proxy, trust_env=False, timeout=httpx.Timeout(20.0, connect=10.0), follow_redirects=False) as client:
                 response = client.get(f"https://{host}/")
