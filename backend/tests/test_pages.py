@@ -14,7 +14,7 @@ from ruangao_note.services.image_storage import ImageStorage, InvalidImageError
 from ruangao_note.services.pages import PageService, PageUpload
 
 
-def png_bytes(color: str = "white") -> bytes:
+def png_bytes(color: str | tuple[int, int, int] = "white") -> bytes:
     stream = BytesIO()
     Image.new("RGB", (32, 24), color=color).save(stream, format="PNG")
     return stream.getvalue()
@@ -50,6 +50,17 @@ def test_batch_upload_persists_order_hash_and_image_dimensions(page_context):
     assert pages[0].height == 24
     assert len(pages[0].sha256) == 64
     assert storage.resolve(pages[0].storage_path).is_file()
+
+
+def test_batch_upload_handles_twenty_four_pages(page_context):
+    session, chapter, storage = page_context
+    uploads = [
+        PageUpload(f"page-{index + 1:02}.png", png_bytes((index, index + 1, index + 2)))
+        for index in range(24)
+    ]
+    result = PageService(session, storage).upload(chapter.id, uploads)
+    assert len(result["pages"]) == 24
+    assert [page.sort_order for page in result["pages"]] == list(range(24))
 
 
 def test_duplicate_hash_is_reported_and_not_inserted(page_context):
@@ -113,6 +124,20 @@ def test_failed_batch_removes_files_created_earlier_in_the_batch(page_context):
             [PageUpload("valid.png", png_bytes()), PageUpload("invalid.png", b"broken")],
         )
     assert list(storage.root.rglob("*.png")) == []
+
+
+def test_rotation_changes_metadata_without_changing_original_bytes(page_context):
+    session, chapter, storage = page_context
+    page = PageService(session, storage).upload(
+        chapter.id, [PageUpload("page.png", png_bytes())]
+    )["pages"][0]
+    original_path = storage.resolve(page.storage_path)
+    original_bytes = original_path.read_bytes()
+    updated = PageService(session, storage).update_rotation(chapter.id, page.id, 90)
+    assert updated.rotation == 90
+    assert original_path.read_bytes() == original_bytes
+    with pytest.raises(ValueError, match="rotation"):
+        PageService(session, storage).update_rotation(chapter.id, page.id, 45)
 
 
 def test_archive_retains_file_and_compacts_active_order(page_context):
