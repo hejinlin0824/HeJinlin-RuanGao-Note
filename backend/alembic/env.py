@@ -3,7 +3,6 @@
 from logging.config import fileConfig
 
 from alembic import context
-
 from ruangao_note.core.config import get_settings
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine
