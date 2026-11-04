@@ -8,7 +8,8 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
