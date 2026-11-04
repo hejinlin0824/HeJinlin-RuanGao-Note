@@ -138,7 +138,7 @@ class MinerUCloudParser:
             except (httpx.HTTPError, ValueError, KeyError):
                 consecutive_errors += 1
                 if consecutive_errors > 20:
-                    raise MinerUError("MinerU polling repeatedly failed due to network errors.")
+                    raise MinerUError("MinerU polling repeatedly failed due to network errors.") from exc
         raise TimeoutError(
             f"MinerU parsing timed out after {self.settings.max_wait_seconds} seconds."
         )
