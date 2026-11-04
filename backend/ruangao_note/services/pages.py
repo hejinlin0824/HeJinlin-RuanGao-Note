@@ -52,6 +52,11 @@ class PageService:
             raise PageNotFoundError("Chapter not found.")
         if not uploads:
             raise ValueError("At least one image is required.")
+        if any(
+            upload.textbook_page_number is not None and upload.textbook_page_number < 1
+            for upload in uploads
+        ):
+            raise ValueError("textbook_page_number must be positive.")
         existing_hashes = set(
             self.session.scalars(
                 select(ChapterPage.sha256).where(
@@ -172,6 +177,8 @@ class PageService:
     ) -> ChapterPage:
         """Archive the prior row and create a new immutable page row at its position."""
         old_page = self._get_active_page(chapter_id, page_id)
+        if upload.textbook_page_number is not None and upload.textbook_page_number < 1:
+            raise ValueError("textbook_page_number must be positive.")
         chapter = self.session.get(Chapter, chapter_id)
         assert chapter is not None
         stored = self.storage.save(upload.content, book_id=chapter.book_id, chapter_id=chapter_id)
