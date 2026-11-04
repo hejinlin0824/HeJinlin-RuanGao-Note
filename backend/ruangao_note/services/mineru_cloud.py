@@ -1,9 +1,4 @@
-"""MinerU v4 cloud batch parser.
-
-The implementation intentionally submits one multi-page PDF per chapter,
-rather than one request per uploaded page. The pre-signed upload URL must not
-receive the Bearer token or any other authorization header.
-"""
+"""MinerU v4 cloud batch parser with phase-aware network diagnostics."""
 
 from __future__ import annotations
 
@@ -13,7 +8,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -48,7 +43,13 @@ class MinerUCloudParser:
         self.client_factory = client_factory
         self.sleep = sleep
 
-    def parse_pdf(self, pdf_bytes: bytes, filename: str) -> dict[str, Any]:
+    def parse_pdf(
+        self,
+        pdf_bytes: bytes,
+        filename: str,
+        *,
+        on_batch_created: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         if not pdf_bytes:
             raise ValueError("PDF payload is empty.")
         base = self.settings.api_base_url.rstrip("/")
@@ -56,21 +57,24 @@ class MinerUCloudParser:
             "Authorization": f"Bearer {self.settings.token}",
             "Content-Type": "application/json",
         }
-        timeout = httpx.Timeout(60.0, connect=15.0)
+        timeout = httpx.Timeout(60.0, connect=20.0)
         with self.client_factory(timeout=timeout, follow_redirects=True) as client:
-            response = client.post(
-                f"{base}/api/v4/file-urls/batch",
-                headers=headers,
-                json={
-                    "enable_formula": True,
-                    "enable_table": True,
-                    "language": self.settings.language,
-                    "model_version": self.settings.model_version,
-                    "files": [{"name": filename}],
-                },
-            )
-            response.raise_for_status()
-            payload = response.json()
+            try:
+                response = client.post(
+                    f"{base}/api/v4/file-urls/batch",
+                    headers=headers,
+                    json={
+                        "enable_formula": True,
+                        "enable_table": True,
+                        "language": self.settings.language,
+                        "model_version": self.settings.model_version,
+                        "files": [{"name": filename}],
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPError as exc:
+                raise self._network_error("requesting a batch upload URL", exc) from exc
             self._ensure_success(payload, "request upload URL")
             data = payload.get("data") or {}
             batch_id = data.get("batch_id")
@@ -78,19 +82,45 @@ class MinerUCloudParser:
             if not batch_id or not urls or not urls[0]:
                 raise MinerUError("MinerU response omitted batch_id or upload URL.")
 
+            # Persist the provider task ID before any subsequent network operation.
+            if on_batch_created is not None:
+                on_batch_created(str(batch_id))
+
             # This is a pre-signed object-storage URL. Do not send MinerU auth.
-            upload = client.put(urls[0], content=pdf_bytes)
-            if upload.status_code not in (200, 201):
-                raise MinerUError(f"MinerU file upload failed: HTTP {upload.status_code}.")
+            try:
+                upload = client.put(urls[0], content=pdf_bytes)
+                upload.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise self._network_error(
+                    f"uploading the PDF for MinerU batch {batch_id}", exc
+                ) from exc
 
             result_item = self._poll_result(client, base, headers, str(batch_id))
             zip_url = result_item.get("full_zip_url")
             if not zip_url:
-                raise MinerUError("MinerU completed without a result ZIP URL.")
+                raise MinerUError(
+                    f"MinerU batch {batch_id} completed without a result ZIP URL."
+                )
 
-            # The ZIP URL is pre-signed too; no Bearer token is forwarded.
-            archive_response = client.get(str(zip_url), timeout=300.0)
-            archive_response.raise_for_status()
+            # GET is safe to retry; the pre-signed URL receives no Bearer token.
+            archive_response = None
+            last_error: httpx.HTTPError | None = None
+            for attempt in range(1, 4):
+                try:
+                    archive_response = client.get(str(zip_url), timeout=300.0)
+                    archive_response.raise_for_status()
+                    last_error = None
+                    break
+                except httpx.HTTPError as exc:
+                    last_error = exc
+                    if attempt < 3:
+                        self.sleep(float(attempt * 2))
+            if last_error is not None:
+                raise self._network_error(
+                    f"downloading the result ZIP for MinerU batch {batch_id}",
+                    last_error,
+                ) from last_error
+            assert archive_response is not None
             artifacts = self._read_result_zip(archive_response.content)
 
         return {
@@ -110,6 +140,7 @@ class MinerUCloudParser:
     ) -> dict[str, Any]:
         deadline = time.monotonic() + self.settings.max_wait_seconds
         consecutive_errors = 0
+        last_error: Exception | None = None
         while time.monotonic() < deadline:
             self.sleep(self.settings.poll_interval_seconds)
             try:
@@ -133,23 +164,39 @@ class MinerUCloudParser:
                     reason = item.get("err_msg") or item.get("error") or "unknown error"
                     raise MinerUError(f"MinerU parsing failed: {reason}")
                 consecutive_errors = 0
+                last_error = None
             except MinerUError:
                 raise
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 consecutive_errors += 1
+                last_error = exc
                 if consecutive_errors > 20:
                     raise MinerUError(
-                        "MinerU polling repeatedly failed due to network errors."
+                        f"Polling MinerU batch {batch_id} failed 21 consecutive times; "
+                        f"last error: {type(exc).__name__}: {exc}"
                     ) from exc
+        if last_error is not None:
+            raise MinerUError(
+                f"Polling MinerU batch {batch_id} timed out after "
+                f"{self.settings.max_wait_seconds} seconds; last network/data error: "
+                f"{type(last_error).__name__}: {last_error}"
+            ) from last_error
         raise TimeoutError(
-            f"MinerU parsing timed out after {self.settings.max_wait_seconds} seconds."
+            f"MinerU batch {batch_id} did not finish within "
+            f"{self.settings.max_wait_seconds} seconds."
+        )
+
+    @staticmethod
+    def _network_error(operation: str, exc: httpx.HTTPError) -> MinerUError:
+        # Include the transport exception but never print auth headers or signed URLs.
+        return MinerUError(
+            f"Network error while {operation}: {type(exc).__name__}: {exc}"
         )
 
     @staticmethod
     def _ensure_success(payload: dict[str, Any], operation: str) -> None:
         code = payload.get("code")
         if code not in (0, "0", None):
-            # Never include request headers or token-bearing data in exceptions.
             message = payload.get("msg") or payload.get("message") or "unknown error"
             raise MinerUError(f"MinerU failed to {operation}: {message}")
 
