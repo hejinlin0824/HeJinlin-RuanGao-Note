@@ -397,7 +397,8 @@
 |---|---|---|
 | TP-00 | 文档已落盘 | README、Spec、任务包路线图 |
 | TP-01 | 本地验收通过（CI待确认） | Python 3.13.15、Ruff、3 项 pytest、FastAPI 启动和两个健康检查接口均已由用户本地验证；GitHub Actions 尚未确认 |
-| TP-02 | 实现中（待本地验收） | 已提交 SQLAlchemy 领域模型、SQLite 引擎/会话、Alembic 初始迁移、Book Repository/Service 和模型测试；待用户执行迁移、lint、pytest |\n| TP-03～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-02 | 实现中（待本地验收） | 已提交 SQLAlchemy 领域模型、SQLite 引擎/会话、Alembic 初始迁移、Book Repository/Service 和模型测试；待用户执行迁移、lint、pytest |
+| TP-03～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
 
