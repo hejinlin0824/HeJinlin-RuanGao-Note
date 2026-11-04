@@ -74,6 +74,15 @@ def test_duplicate_hash_is_reported_and_not_inserted(page_context):
     assert len(service.list_pages(chapter.id)) == 1
 
 
+def test_nonpositive_textbook_page_number_is_rejected_before_writing(page_context):
+    session, chapter, storage = page_context
+    with pytest.raises(ValueError, match="textbook_page_number"):
+        PageService(session, storage).upload(
+            chapter.id, [PageUpload("page.png", png_bytes(), 0)]
+        )
+    assert list(storage.root.rglob("*.png")) == []
+
+
 def test_invalid_image_is_rejected(page_context):
     session, chapter, storage = page_context
     with pytest.raises(InvalidImageError):
