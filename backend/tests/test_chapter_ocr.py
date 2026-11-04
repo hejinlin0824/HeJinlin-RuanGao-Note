@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine
-from ruangao_note.domain.models import Book, Chapter, ProcessingRun
+from ruangao_note.domain.models import Book, Chapter, ProcessingRun, SourceBlock
 from ruangao_note.services.chapter_ocr import (
     ChapterOCRService,
     build_chapter_pdf,
@@ -23,6 +23,11 @@ from ruangao_note.services.mineru_cloud import (
     MinerUSettings,
 )
 from ruangao_note.services.pages import PageService, PageUpload
+from ruangao_note.services.source_blocks import (
+    build_source_block_payloads,
+    materialize_source_blocks,
+    render_anchored_markdown,
+)
 
 
 def image_bytes(color: str) -> bytes:
@@ -226,6 +231,94 @@ def test_failed_chapter_ocr_run_resumes_existing_batch_without_resubmission(
         session.close()
         engine.dispose()
 
+
+
+
+def test_mineru_content_list_maps_blocks_and_flags_cleanup_candidates_without_deleting():
+    artifacts = {
+        "json": {
+            "content_list.json": [
+                {"type": "text", "page_idx": 0, "bbox": [10, 20, 300, 45],
+                 "text": "版权所有 示例教材"},
+                {"type": "title", "page_idx": 0, "bbox": [10, 60, 500, 90],
+                 "text": "第一章 系统架构"},
+                {"type": "text", "page_idx": 0, "text": "arXiv: 2401.12345 论文水印"},
+                {"type": "footnote", "page_idx": 0, "text": "[1] 这是脚注内容"},
+                {"type": "table", "page_idx": 0, "table_body": "<table><tr><td>A</td></tr></table>"},
+                {"type": "equation", "page_idx": 1, "text": "E = mc^2"},
+                {"type": "text", "page_idx": 1, "text": "版权所有 示例教材"},
+                {"type": "image", "page_idx": 1, "image_caption": ["图 1：系统结构图"]},
+            ]
+        }
+    }
+    references = [
+        {"pdf_page_index": 1, "chapter_page_id": "page-a"},
+        {"pdf_page_index": 2, "chapter_page_id": "page-b"},
+    ]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 8
+    assert blocks[0]["page_id"] == "page-a"
+    assert blocks[5]["page_id"] == "page-b"
+    assert blocks[4]["text"] == "<table><tr><td>A</td></tr></table>"
+    assert blocks[5]["block_type"] == "equation"
+    assert blocks[7]["text"] == "图 1：系统结构图"
+    reasons = {
+        reason
+        for candidate in report["cleanup_candidates"]
+        for reason in candidate["reasons"]
+    }
+    assert "possible_watermark_or_publication_metadata" in reasons
+    assert "possible_footnote" in reasons
+    assert "repeated_short_text_across_pages" in reasons
+    assert all(candidate["action"] == "review_only" for candidate in report["cleanup_candidates"])
+
+
+def test_source_block_materialization_is_idempotent_and_keeps_page_anchor(tmp_path):
+    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+    try:
+        run = ProcessingRun(
+            chapter_id=chapter.id,
+            page_id=None,
+            task_type="chapter_ocr",
+            provider="mineru_cloud",
+            provider_version="vlm",
+            status="succeeded",
+            normalized_result={
+                "page_references": [
+                    {"pdf_page_index": 1, "chapter_page_id": pages[0].id},
+                    {"pdf_page_index": 2, "chapter_page_id": pages[1].id},
+                ],
+                "artifacts": {
+                    "json": {
+                        "content_list.json": [
+                            {"type": "title", "page_idx": 0, "text": "第一节"},
+                            {"type": "text", "page_idx": 1, "text": "正文段落"},
+                        ]
+                    }
+                },
+            },
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        blocks, report = materialize_source_blocks(session, run)
+        session.commit()
+        first_ids = [block.id for block in blocks]
+        again, _ = materialize_source_blocks(session, run)
+
+        assert report["blocks_created"] == 2
+        assert [block.page_id for block in blocks] == [pages[0].id, pages[1].id]
+        assert [block.id for block in again] == first_ids
+        assert len(session.query(SourceBlock).filter_by(processing_run_id=run.id).all()) == 2
+        markdown = render_anchored_markdown(blocks)
+        assert f"<!-- source:{blocks[0].block_key} -->" in markdown
+        assert "## 第一节" in markdown
+    finally:
+        session.close()
+        engine.dispose()
 
 def test_mineru_zip_parser_reads_markdown_and_json():
     stream = io.BytesIO()
