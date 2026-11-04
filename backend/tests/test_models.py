@@ -1,6 +1,7 @@
 """Database and domain-model integration tests."""
 
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,7 @@ from ruangao_note.domain.models import (
 )
 
 
-def make_session() -> tuple[Session, object]:
+def make_session() -> tuple[Session, Engine]:
     """Create an isolated in-memory SQLite database for one test."""
     engine = create_database_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
