@@ -47,6 +47,6 @@ uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port
 ## 8. 当前明确不在验收范围内
 
 - 真实 OCR 文字识别准确率；
-- 云端 API Key、计费、限流与异步任务队列；
+- 云端额度/计费、服务端限流和生产级异步任务队列；
 - 自动倾斜角估计、透视矫正和智能裁边；
 - 自动创建 SourceBlock 或 Markdown（属于 TP-05）。
