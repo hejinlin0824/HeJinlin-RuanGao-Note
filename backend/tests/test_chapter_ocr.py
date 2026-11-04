@@ -597,3 +597,162 @@ def test_source_blocks_report_missing_layout_artifacts_explicitly():
     assert report["layout_source"] is None
     assert report["artifact_diagnostics"]["json_files"] == ["layout.json"]
     assert "No content_list*.json artifact was found" in report["warnings"][0]
+
+
+
+def test_mineru_v2_semantic_span_fields_are_extracted_and_v2_is_preferred():
+    artifacts = {
+        "json": {
+            "chapter_content_list.json": [
+                {
+                    "type": "text",
+                    "page_idx": 0,
+                    "text": "legacy version text",
+                }
+            ],
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "title",
+                        "content": {
+                            "title_content": [
+                                {"type": "text", "content": "第一章 信息化发展"}
+                            ],
+                            "level": 1,
+                        },
+                        "bbox": [83, 121, 917, 156],
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": {
+                            "paragraph_content": [
+                                {"type": "text", "content": "信息化是一个"}
+                                ,
+                                {"type": "text", "content": "持续演进的过程。"},
+                            ]
+                        },
+                    },
+                    {
+                        "type": "equation_interline",
+                        "content": {
+                            "math_content": [
+                                {"type": "text", "content": "E = mc^2"}
+                            ],
+                            "math_type": "latex",
+                        },
+                    },
+                    {
+                        "type": "page_footnote",
+                        "content": {
+                            "page_footnote_content": [
+                                {"type": "text", "content": "脚注内容"}
+                            ]
+                        },
+                    },
+                ]
+            ],
+        },
+        "markdown": {"full.md": "# Chapter"},
+        "files": [
+            "chapter_content_list.json",
+            "chapter_content_list_v2.json",
+            "full.md",
+        ],
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 4
+    assert [block["block_type"] for block in blocks] == [
+        "heading",
+        "paragraph",
+        "equation",
+        "footnote",
+    ]
+    assert blocks[0]["text"] == "第一章 信息化发展"
+    assert blocks[1]["text"] == "信息化是一个\\n持续演进的过程。"
+    assert blocks[2]["text"] == "E = mc^2"
+    assert blocks[3]["text"] == "脚注内容"
+    assert report["artifact_diagnostics"]["selected_layout_file"] == (
+        "chapter_content_list_v2.json"
+    )
+    assert report["empty_text_entries"] == 0
+
+
+def test_materialize_repairs_previously_empty_source_blocks_preserving_ids(tmp_path):
+    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+    try:
+        run = ProcessingRun(
+            chapter_id=chapter.id,
+            page_id=None,
+            task_type="chapter_ocr",
+            provider="mineru_cloud",
+            provider_version="vlm",
+            status="succeeded",
+            normalized_result={
+                "page_references": [
+                    {"pdf_page_index": 1, "chapter_page_id": pages[0].id},
+                    {"pdf_page_index": 2, "chapter_page_id": pages[1].id},
+                ],
+                "artifacts": {
+                    "json": {
+                        "chapter_content_list_v2.json": [
+                            [
+                                {
+                                    "type": "title",
+                                    "content": {
+                                        "title_content": [
+                                            {"type": "text", "content": "第一章"}
+                                        ]
+                                    },
+                                }
+                            ],
+                            [
+                                {
+                                    "type": "paragraph",
+                                    "content": {
+                                        "paragraph_content": [
+                                            {"type": "text", "content": "第二页正文"}
+                                        ]
+                                    },
+                                }
+                            ],
+                        ]
+                    }
+                },
+            },
+        )
+        session.add(run)
+        session.flush()
+        stale = [
+            SourceBlock(
+                chapter_id=chapter.id,
+                page_id=pages[index].id,
+                processing_run_id=run.id,
+                block_key=f"old-empty-{index}",
+                block_type="paragraph",
+                text="",
+                content_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                version=1,
+                sort_order=index,
+                is_active=True,
+            )
+            for index in range(2)
+        ]
+        session.add_all(stale)
+        session.commit()
+        original_ids = [block.id for block in stale]
+
+        repaired, report = materialize_source_blocks(session, run)
+        session.commit()
+
+        assert [block.id for block in repaired] == original_ids
+        assert [block.text for block in repaired] == ["第一章", "第二页正文"]
+        assert [block.block_type for block in repaired] == ["heading", "paragraph"]
+        assert all(block.version == 2 for block in repaired)
+        assert report["empty_text_entries"] == 0
+        assert session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
+    finally:
+        session.close()
+        engine.dispose()
