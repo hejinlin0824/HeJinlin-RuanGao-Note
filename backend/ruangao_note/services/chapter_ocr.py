@@ -109,15 +109,36 @@ class ChapterOCRService:
         self.parser = parser
 
     def _attach_source_blocks(self, run: ProcessingRun) -> None:
-        blocks, report = materialize_source_blocks(self.session, run)
-        quality = dict(run.quality_report or {})
-        quality["source_blocks"] = report
-        run.quality_report = quality
-        if blocks:
-            normalized = dict(run.normalized_result or {})
-            normalized["source_block_count"] = len(blocks)
-            normalized["anchored_markdown"] = render_anchored_markdown(blocks, report)
-            run.normalized_result = normalized
+        try:
+            blocks, report = materialize_source_blocks(self.session, run)
+            quality = dict(run.quality_report or {})
+            quality["source_blocks"] = report
+            run.quality_report = quality
+            if blocks:
+                normalized = dict(run.normalized_result or {})
+                normalized["source_block_count"] = len(blocks)
+                normalized["anchored_markdown"] = render_anchored_markdown(
+                    blocks, report
+                )
+                run.normalized_result = normalized
+        except Exception as exc:
+            # OCR artifacts are already durable; evidence indexing must not invalidate OCR.
+            self.session.rollback()
+            persisted = self.session.get(ProcessingRun, run.id)
+            if persisted is None:
+                return
+            quality = dict(persisted.quality_report or {})
+            quality["source_blocks"] = {
+                "blocks_created": 0,
+                "cleanup_candidate_count": 0,
+                "warnings": [
+                    f"SourceBlock materialization failed ({type(exc).__name__}); "
+                    "the original OCR artifacts remain available."
+                ],
+            }
+            persisted.quality_report = quality
+            self.session.commit()
+            self.session.refresh(persisted)
 
     def resume_run(self, chapter_id: str, run_id: str) -> ProcessingRun:
         """Resume result retrieval for an existing MinerU batch; never resubmit its PDF."""
@@ -186,8 +207,9 @@ class ChapterOCRService:
                 ],
             }
             run.status = "succeeded"
-            self._attach_source_blocks(run)
             run.completed_at = utc_now()
+            self.session.commit()
+            self._attach_source_blocks(run)
             self.session.commit()
             self.session.refresh(run)
             return run
@@ -313,8 +335,9 @@ class ChapterOCRService:
                 ],
             }
             run.status = "succeeded"
-            self._attach_source_blocks(run)
             run.completed_at = utc_now()
+            self.session.commit()
+            self._attach_source_blocks(run)
             self.session.commit()
             self.session.refresh(run)
             return run
