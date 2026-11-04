@@ -244,6 +244,7 @@ def test_mineru_result_download_uses_direct_fresh_client_and_streams_zip():
 
     class FakeResponse:
         status_code = 200
+        headers = {}
 
         def __enter__(self):
             return self
