@@ -80,3 +80,36 @@ def test_visual_empty_block_is_distinguished_from_empty_paragraph():
     assert diagnostics[1]["visual_only"] is False
     assert diagnostics[1]["content_keys"] == ["paragraph_content"]
     assert "1 non-visual layout blocks" in report["warnings"][0]
+
+
+
+def test_paragraph_content_with_nested_spans_is_extracted():
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {
+                            "paragraph_content": {
+                                "spans": [
+                                    {"type": "text", "text": "段落正文被正确提取"},
+                                    {"type": "equation_inline", "latex": "x+y"},
+                                ]
+                            }
+                        },
+                        "bbox": [10, 20, 900, 80],
+                    }
+                ]
+            ]
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 1
+    assert blocks[0]["text"] == "段落正文被正确提取\\nx+y"
+    assert report["empty_text_entries"] == 0
+    assert report["unexpected_empty_text_entries"] == 0
+    assert report["warnings"] == []
