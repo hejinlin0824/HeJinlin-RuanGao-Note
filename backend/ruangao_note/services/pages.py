@@ -29,6 +29,13 @@ class DuplicatePageError(ValueError):
     """Raised when a replacement duplicates another active page."""
 
 
+def safe_original_filename(filename: str) -> str:
+    """Keep only a printable basename; never use user input as a storage path."""
+    basename = PurePath(filename.replace("\\", "/")).name
+    printable = "".join(character for character in basename if character.isprintable())
+    return printable[:500] or "page"
+
+
 class PageService:
     """Coordinate database page metadata with immutable image files."""
 
@@ -67,7 +74,7 @@ class PageService:
                     continue
                 existing_hashes.add(stored.sha256)
                 created_paths.append(stored.storage_path)
-                safe_name = PurePath(upload.filename.replace("\\", "/")).name[:500] or "page"
+                safe_name = safe_original_filename(upload.filename)
                 page = ChapterPage(
                     chapter_id=chapter_id,
                     sort_order=next_order,
@@ -185,7 +192,7 @@ class PageService:
             old_page.sort_order = offset
             old_page.status = "archived"
             self.session.flush()
-            safe_name = PurePath(upload.filename.replace("\\", "/")).name[:500] or "page"
+            safe_name = safe_original_filename(upload.filename)
             new_page = ChapterPage(
                 chapter_id=chapter_id,
                 sort_order=original_order,
