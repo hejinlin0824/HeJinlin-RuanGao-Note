@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：TP-00 文档基线已完成；TP-01 本地环境、lint、单元测试和健康检查已通过（GitHub Actions 状态仍需确认）；TP-02 领域模型与数据库骨架已提交 dev，等待本地迁移和模型测试验收。
+- 当前阶段：TP-00～TP-03 已完成验收；TP-04 首版 OCR Provider 抽象、预处理和处理记录 API 已提交 dev，等待 GitHub CI 与 Windows 本地验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -111,7 +111,7 @@
 
 ### TP-03：图片导入与页面管理
 
-状态：已实现首版 API 与文件存储，等待 Windows 本地验收。
+状态：自动化测试与 Windows 本地验收通过（22 passed）；TP-03 已完成。
 
 目标：可靠保存原始教材页面，并支持顺序管理。
 
@@ -398,9 +398,11 @@
 | 任务包 | 状态 | 说明 |
 |---|---|---|
 | TP-00 | 文档已落盘 | README、Spec、任务包路线图 |
-| TP-01 | 本地验收通过（CI待确认） | Python 3.13.15、Ruff、3 项 pytest、FastAPI 启动和两个健康检查接口均已由用户本地验证；GitHub Actions 尚未确认 |
-| TP-02 | 实现中（待本地验收） | 已提交 SQLAlchemy 领域模型、SQLite 引擎/会话、Alembic 初始迁移、Book Repository/Service 和模型测试；待用户执行迁移、lint、pytest |
-| TP-03～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-01 | 已完成 | Python 3.13.15、Ruff、pytest、FastAPI 启动和健康检查已验收 |
+| TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
+| TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
+| TP-04 | 实现中，待 CI/本地验收 | Provider 抽象、预处理、ProcessingRun 结果持久化、单页执行与历史 API 已提交；真实 OCR 引擎未接入 |
+| TP-05～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
 
@@ -472,3 +474,23 @@ uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port
 访问 `/health/ready` 应返回 `{"status":"ready"}`。首次迁移后可通过 `alembic current` 确认版本为 `0001_initial_domain`。
 
 TP-02 在以上命令真实运行并修复问题前，不标记为完成。
+
+
+## 9. TP-04 首版实现记录（等待 CI 与 Windows 验收）
+
+### 已实现
+
+- `ProcessingRun` 新增 `normalized_result` 与 `quality_report` JSON 字段，使用 `0003_ocr_results` 独立迁移；保留 `raw_result` 原始响应。
+- `OCRProvider` Protocol 规定统一识别方法；`OCRProviderResponse` 与 `OCRBlock` 作为 Provider 无关的标准化输入。
+- `normalize_response` 校验置信度范围、bbox 归一化范围与坐标方向，统一文本块 ID、类型、顺序和字段。
+- `MockOCRProvider` 不调用外部服务、不生成虚构文本，明确在原始响应中标记 `simulated=true`。
+- `preprocess_image` 在内存中执行 EXIF 方向校正、页面旋转、灰度、自动对比度和质量启发式检查；不覆盖原图、不保存未经请求的派生文件。
+- `OCRService` 每次调用新建 ProcessingRun，记录 queued/running/succeeded/failed 生命周期、原始响应、标准化结果、质量指标和异常。
+- API：`POST /api/chapters/{chapter_id}/pages/{page_id}/ocr`；`GET /api/chapters/{chapter_id}/pages/{page_id}/ocr-runs`。
+
+### 当前限制
+
+- OCR 执行是同步请求内处理，尚未接入后台队列；长耗时云 OCR 不应直接沿用同步执行方式。
+- Mock Provider 只验证接口和持久化链路，真实识别能力需要后续独立 Provider 实现。
+- 当前质量指标为启发式提示，不等同于专业图像质量评估；倾斜角检测、裁边、透视矫正尚未实现。
+- 当前结果尚未自动写入 SourceBlock；该职责属于 TP-05，避免 OCR 任务和证据块生成耦合。
