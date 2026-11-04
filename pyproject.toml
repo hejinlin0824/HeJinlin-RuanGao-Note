@@ -28,6 +28,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["backend"]
 
+[tool.setuptools.package-data]
+ruangao_note = ["static/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 pythonpath = ["backend"]
