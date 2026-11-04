@@ -61,14 +61,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 
 默认图片目录为 `./data/uploads`，不进入 Git。可通过 `STORAGE_DIR`、`MAX_IMAGE_BYTES`、`MAX_BATCH_UPLOAD_BYTES`、`MAX_BATCH_UPLOAD_COUNT`、`MAX_IMAGE_PIXELS` 配置上传限制。
 
-OCR 处理 API（TP-04 首版）：
+OCR 处理 API（TP-04）：
 
-- `POST /api/chapters/{chapter_id}/pages/{page_id}/ocr`：为指定活动页面创建一次 OCR 处理尝试。
-- `GET /api/chapters/{chapter_id}/pages/{page_id}/ocr-runs`：查询该页面的 OCR 历史记录。
-- 每次 POST 都会新建 ProcessingRun；失败记录不会覆盖，重复 POST 即创建新的重试尝试。
-- 默认使用 `mock` Provider，返回明确的模拟标记和空文本块，不会生成虚构 OCR 文本。
-- 标准化结果保留文本块类型、顺序、归一化 bbox 和置信度；Provider 原始响应与质量报告分别保存。
-- 当前图像预处理为内存派生图，不会改写原始教材图片；透视校正和真实 OCR 引擎留待后续接入。
+- `POST /api/chapters/{chapter_id}/ocr`：把该章节全部活动页面按 `sort_order` 合成为一个多页 PDF，提交一个 MinerU v4 云端 batch 任务。
+- `GET /api/chapters/{chapter_id}/ocr-runs`：查询该章节的 MinerU 处理历史。
+- `POST /api/chapters/{chapter_id}/pages/{page_id}/ocr`：为指定活动页面创建一次 Mock OCR 处理尝试。
+- 每次 POST 都会新建 ProcessingRun；失败记录不会覆盖，重复 POST 即创建新的处理尝试。
+- 单页 Mock Provider 明确返回模拟标记和空文本块，不会生成虚构 OCR 文本。
+- 章节 MinerU 接口使用 v4 流程：申请批量上传地址 → 预签名 PUT → 轮询 batch → 下载 ZIP。
+- Token 只从项目根目录本地 `.env` 的 `MINERU_TOKEN` 读取。运行 `.\\scripts\\configure_mineru.ps1` 可隐藏输入并保存，不需要把 Token 发到聊天或提交 Git。
+- `.env` 已在 `.gitignore` 中排除；`.env.example` 只包含空变量。
+- 章节 PDF 是临时内存产物，按页面顺序构建；原始图片不会被修改。
+- MinerU 的 Markdown/JSON 解析产物保存在章节级 ProcessingRun；SourceBlock、稳定锚点与正文清洗属于 TP-05，尚未实现。
 
 数据库初始化和检查：
 
