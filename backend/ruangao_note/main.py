@@ -1,6 +1,9 @@
 """FastAPI application entry point."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,6 +24,13 @@ app = FastAPI(
 
 app.include_router(library_router)
 app.include_router(ocr_router)
+
+
+@app.get("/mineru-test", include_in_schema=False)
+def mineru_test_page() -> FileResponse:
+    """Serve the standalone MinerU batch-upload and OCR acceptance page."""
+    page = Path(__file__).resolve().parent / "static" / "mineru_test.html"
+    return FileResponse(page, media_type="text/html; charset=utf-8")
 
 
 @app.get("/health/live", tags=["health"])
