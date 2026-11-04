@@ -521,3 +521,79 @@ def test_mineru_zip_parser_rejects_path_traversal():
         assert "unsafe file path" in str(exc)
     else:
         raise AssertionError("Unsafe ZIP path was accepted.")
+
+
+
+def test_source_blocks_support_nested_content_list_v2_and_auxiliary_blocks():
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "text",
+                        "content": {"text": "第一页正文"},
+                        "bbox": [10, 20, 300, 45],
+                    },
+                    {"type": "header", "content": "教材页眉"},
+                    {"type": "page_footnote", "content": "页下注释"},
+                ],
+                [
+                    {
+                        "type": "text",
+                        "content": {"text": "第二页正文"},
+                    }
+                ],
+            ]
+        },
+        "markdown": {"full.md": "# Chapter"},
+        "files": ["full.md", "chapter_content_list_v2.json"],
+    }
+    references = [
+        {"pdf_page_index": 1, "chapter_page_id": "page-a"},
+        {"pdf_page_index": 2, "chapter_page_id": "page-b"},
+    ]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 4
+    assert [block["page_id"] for block in blocks] == [
+        "page-a",
+        "page-a",
+        "page-a",
+        "page-b",
+    ]
+    assert blocks[0]["text"] == "第一页正文"
+    assert blocks[1]["block_type"] == "header"
+    assert blocks[2]["block_type"] == "footnote"
+    assert report["layout_entry_count"] == 4
+    assert report["mapped_entries"] == 4
+    assert report["artifact_diagnostics"]["content_list_candidates"] == [
+        "chapter_content_list_v2.json"
+    ]
+    reasons = {
+        reason
+        for candidate in report["cleanup_candidates"]
+        for reason in candidate["reasons"]
+    }
+    assert "possible_page_auxiliary_text" in reasons
+    assert "possible_footnote" in reasons
+
+
+def test_source_blocks_report_missing_layout_artifacts_explicitly():
+    artifacts = {
+        "markdown": {"full.md": "# OCR text"},
+        "json": {"layout.json": {"pages": []}},
+        "files": ["full.md", "layout.json"],
+    }
+
+    blocks, report = build_source_block_payloads(
+        artifacts,
+        [{"pdf_page_index": 1, "chapter_page_id": "page-a"}],
+    )
+
+    assert blocks == []
+    assert report["layout_entry_count"] == 0
+    assert report["unmapped_entries"] == 0
+    assert report["layout_source"] is None
+    assert report["artifact_diagnostics"]["json_files"] == ["layout.json"]
+    assert "No content_list*.json artifact was found" in report["warnings"][0]
