@@ -10,11 +10,17 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("processing_runs", sa.Column("normalized_result", sa.JSON(), nullable=True))
-    op.add_column("processing_runs", sa.Column("quality_report", sa.JSON(), nullable=True))
+    existing = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("processing_runs")}
+    if "normalized_result" not in existing:
+        op.add_column("processing_runs", sa.Column("normalized_result", sa.JSON(), nullable=True))
+    if "quality_report" not in existing:
+        op.add_column("processing_runs", sa.Column("quality_report", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
+    existing = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("processing_runs")}
     with op.batch_alter_table("processing_runs") as batch_op:
-        batch_op.drop_column("quality_report")
-        batch_op.drop_column("normalized_result")
+        if "quality_report" in existing:
+            batch_op.drop_column("quality_report")
+        if "normalized_result" in existing:
+            batch_op.drop_column("normalized_result")
