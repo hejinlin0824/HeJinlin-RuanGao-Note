@@ -96,8 +96,8 @@
 1. 建立 Book、Chapter、Section、ChapterPage。
 2. 建立 ProcessingRun、SourceBlock。
 3. 建立 KnowledgeNode、KnowledgeSource。
-4. 建立 Relation、Figure、AuditIssue、AuditEvent。
-5. 建立 Question、ReviewState、AnswerLog 的初始模型或预留迁移。
+4. 建立 Relation、RelationEvidence、Figure、AuditIssue、AuditEvent。
+5. 建立 Question、QuestionSource、ReviewState、AnswerLog 的初始模型或预留迁移。
 6. 配置 SQLAlchemy 关系、约束和 Alembic 初始迁移。
 7. 建立 Repository/Service 层，避免 API 直接操作复杂 SQL。
 
