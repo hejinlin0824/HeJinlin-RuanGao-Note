@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-TP-01 项目骨架已在 Python 3.13.15 环境完成本地验收。当前在 dev 分支推进 TP-02：领域模型与数据库；数据库迁移和模型测试仍需在开发机执行确认。所有正式知识、关系和题目必须能回溯到教材原文来源块。
+TP-01、TP-02 已完成本地验收。当前在 dev 分支实施 TP-03：教材图片导入与页面管理；待 Windows 环境完成本轮验收。所有正式知识、关系和题目必须能回溯到教材原文来源块。
 
 ## 文档
 
@@ -43,6 +43,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 ```
 
 脚本会使用项目的 `.venv` Python，依次检查 Python 版本、在系统临时目录创建一次性 SQLite 数据库并执行 Alembic 迁移、运行 Ruff 和 pytest。迁移测试库会在结束后清理，不会覆盖正式教材数据库。首次使用前仍需按上方步骤创建虚拟环境并安装 `.[dev]` 依赖。
+
+教材图片导入 API（TP-03）：
+
+- `POST /api/books`、`GET /api/books`：创建和分页查询教材。
+- `POST /api/books/{book_id}/chapters`：创建章节。
+- `POST /api/chapters/{chapter_id}/pages`：批量上传 1–30 张 JPEG/PNG/WEBP/TIFF 图片。
+- `GET /api/chapters/{chapter_id}/pages`：按页序查询页面。
+- `PUT /api/chapters/{chapter_id}/pages/order`：提交完整页面 ID 顺序。
+- `PATCH /api/chapters/{chapter_id}/pages/{page_id}/number`：校正教材印刷页码。
+- `PUT /api/chapters/{chapter_id}/pages/{page_id}/replace`：以新页面记录替换，旧原图保留。
+- `DELETE /api/chapters/{chapter_id}/pages/{page_id}`：归档页面，不物理删除原图。
+- `GET /api/chapters/{chapter_id}/pages/{page_id}/image`：预览原始图片。
+
+默认图片目录为 `./data/uploads`，不进入 Git。可通过 `STORAGE_DIR`、`MAX_IMAGE_BYTES`、`MAX_BATCH_UPLOAD_BYTES`、`MAX_BATCH_UPLOAD_COUNT`、`MAX_IMAGE_PIXELS` 配置上传限制。
 
 数据库初始化和检查：
 
