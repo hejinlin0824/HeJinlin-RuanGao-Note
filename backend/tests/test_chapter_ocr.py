@@ -17,7 +17,11 @@ from ruangao_note.services.chapter_ocr import (
     build_chapter_pdf,
 )
 from ruangao_note.services.image_storage import ImageStorage
-from ruangao_note.services.mineru_cloud import MinerUCloudParser, MinerUError
+from ruangao_note.services.mineru_cloud import (
+    MinerUCloudParser,
+    MinerUError,
+    MinerUSettings,
+)
 from ruangao_note.services.pages import PageService, PageUpload
 
 
