@@ -132,7 +132,7 @@ class ChapterOCRService:
                 language=settings.mineru_language,
                 poll_interval_seconds=settings.mineru_poll_interval_seconds,
                 max_wait_seconds=settings.mineru_max_wait_seconds,
-                download_proxy=settings.mineru_download_proxy,
+                download_proxy=getattr(settings, "mineru_download_proxy", None),
             )
         )
         run.status = "running"
@@ -247,7 +247,7 @@ class ChapterOCRService:
                     language=settings.mineru_language,
                     poll_interval_seconds=settings.mineru_poll_interval_seconds,
                     max_wait_seconds=settings.mineru_max_wait_seconds,
-                download_proxy=settings.mineru_download_proxy,
+                download_proxy=getattr(settings, "mineru_download_proxy", None),
                 )
             )
             def persist_batch_id(batch_id: str) -> None:
