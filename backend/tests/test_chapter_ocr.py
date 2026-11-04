@@ -151,6 +151,78 @@ def test_chapter_ocr_preserves_batch_id_when_network_fails_after_submission(
         engine.dispose()
 
 
+def test_failed_chapter_ocr_run_resumes_existing_batch_without_resubmission(
+    tmp_path, monkeypatch
+):
+    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+    batch_calls = []
+
+    class RecoveryParser:
+        def resume_batch(self, batch_id: str) -> dict:
+            batch_calls.append(batch_id)
+            return {
+                "batch_id": batch_id,
+                "state": "done",
+                "model_version": "vlm",
+                "language": "ch",
+                "artifacts": {
+                    "markdown": {"full.md": "# Recovered chapter"},
+                    "json": {},
+                    "files": ["full.md"],
+                },
+            }
+
+        def parse_pdf(self, *args, **kwargs):
+            raise AssertionError("Recovery must never resubmit the PDF.")
+
+    monkeypatch.setattr(
+        "ruangao_note.services.chapter_ocr.get_settings",
+        lambda: SimpleNamespace(
+            mineru_token="test-token",
+            mineru_api_base_url="https://mineru.net",
+            mineru_model_version="vlm",
+            mineru_language="ch",
+            mineru_poll_interval_seconds=0.01,
+            mineru_max_wait_seconds=1,
+        ),
+    )
+    try:
+        failed = ProcessingRun(
+            chapter_id=chapter.id,
+            page_id=None,
+            task_type="chapter_ocr",
+            provider="mineru_cloud",
+            provider_version="vlm",
+            status="failed",
+            raw_result={
+                "batch_id": "existing-batch-123",
+                "state": "submitted",
+                "page_count": 2,
+                "page_references": [{"pdf_page_index": 1, "chapter_page_id": pages[0].id}],
+            },
+            error_message="ZIP download disconnected",
+        )
+        session.add(failed)
+        session.commit()
+        session.refresh(failed)
+
+        recovered = ChapterOCRService(
+            session, storage=storage, parser=RecoveryParser()
+        ).resume_run(chapter.id, failed.id)
+
+        assert recovered.status == "succeeded"
+        assert recovered.raw_result["batch_id"] == "existing-batch-123"
+        assert recovered.raw_result["recovery"]["resubmitted"] is False
+        assert recovered.normalized_result["page_count"] == 2
+        assert recovered.normalized_result["artifacts"]["markdown"]["full.md"] == (
+            "# Recovered chapter"
+        )
+        assert batch_calls == ["existing-batch-123"]
+    finally:
+        session.close()
+        engine.dispose()
+
+
 def test_mineru_zip_parser_reads_markdown_and_json():
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
