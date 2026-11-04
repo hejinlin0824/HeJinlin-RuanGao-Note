@@ -111,6 +111,11 @@ def test_complete_book_chapter_and_page_api_flow(tmp_path, monkeypatch) -> None:
             replacement = replacement_response.json()
             assert replacement["replaces_page_id"] == page_id
             assert replacement["sort_order"] == 0
+            historical_preview = client.get(
+                f"/api/chapters/{chapter_id}/pages/{page_id}/image"
+            )
+            assert historical_preview.status_code == 200
+            assert historical_preview.content == png_bytes((0, 1, 2))
 
             current_pages = client.get(f"/api/chapters/{chapter_id}/pages").json()
             assert len(current_pages) == 24
