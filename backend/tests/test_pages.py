@@ -116,8 +116,8 @@ def test_storage_rejects_path_traversal(page_context):
 
 
 def test_failed_batch_removes_files_created_earlier_in_the_batch(page_context):
-    _, chapter, storage = page_context
-    service = PageService(_, storage)
+    session, chapter, storage = page_context
+    service = PageService(session, storage)
     with pytest.raises(InvalidImageError):
         service.upload(
             chapter.id,
