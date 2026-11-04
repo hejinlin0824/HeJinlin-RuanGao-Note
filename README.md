@@ -12,6 +12,7 @@ TP-01～TP-03 已完成验收。TP-04 已提供 Mock OCR 和 MinerU v4 云端章
 - [任务包与实施路线图](docs/TASK_PACKAGES.md)
 - [TP-03 图片导入本地验收说明](docs/TP03_ACCEPTANCE.md)
 - [TP-04 OCR 本地验收说明](docs/TP04_ACCEPTANCE.md)
+- [TP-05 原文证据块与 Markdown 验收说明](docs/TP05_ACCEPTANCE.md)
 
 ## 技术基线
 
@@ -80,7 +81,7 @@ OCR 处理 API（TP-04）：
 - Token 只从项目根目录本地 `.env` 的 `MINERU_TOKEN` 读取。运行 `.\scripts\configure_mineru.ps1` 可隐藏输入并保存，不需要把 Token 发到聊天或提交 Git。
 - `.env` 已在 `.gitignore` 中排除；`.env.example` 只包含空变量。
 - 章节 PDF 是临时内存产物，按页面顺序构建；原始图片不会被修改。
-- MinerU 的 Markdown/JSON 解析产物保存在章节级 ProcessingRun；SourceBlock、稳定锚点与正文清洗属于 TP-05，尚未实现。
+- MinerU 的原始 Markdown/JSON 解析产物保存在章节级 ProcessingRun；TP-05 已开始从 `content_list.json` 生成按页关联的 SourceBlock 和带锚点 Markdown，并标记疑似水印、脚注及跨页重复短文本。清洗仅生成审核候选，不会静默删除原文。
 
 数据库初始化和检查：
 
