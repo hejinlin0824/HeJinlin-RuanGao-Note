@@ -180,6 +180,19 @@ class ChapterOCRService:
             if failed_run is None:
                 raise
             failed_run.status = "failed"
+            download_diagnostics = getattr(
+                locals().get("parser"), "last_download_diagnostics", None
+            )
+            if download_diagnostics:
+                previous_raw = (
+                    failed_run.raw_result
+                    if isinstance(failed_run.raw_result, dict)
+                    else {}
+                )
+                failed_run.raw_result = {
+                    **previous_raw,
+                    "download_diagnostics": download_diagnostics,
+                }
             failed_run.error_message = f"{type(exc).__name__}: {exc}"[:4000]
             failed_run.completed_at = utc_now()
             self.session.commit()
@@ -293,6 +306,19 @@ class ChapterOCRService:
             if failed_run is None:
                 raise
             failed_run.status = "failed"
+            download_diagnostics = getattr(
+                locals().get("parser"), "last_download_diagnostics", None
+            )
+            if download_diagnostics:
+                previous_raw = (
+                    failed_run.raw_result
+                    if isinstance(failed_run.raw_result, dict)
+                    else {}
+                )
+                failed_run.raw_result = {
+                    **previous_raw,
+                    "download_diagnostics": download_diagnostics,
+                }
             failed_run.error_message = f"{type(exc).__name__}: {exc}"[:4000]
             failed_run.completed_at = utc_now()
             self.session.commit()
