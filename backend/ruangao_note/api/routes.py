@@ -57,6 +57,19 @@ def list_books(
     )
 
 
+@router.get("/books/{book_id}/chapters", response_model=list[ChapterRead])
+def list_chapters(book_id: str, session: Session = Depends(get_db)) -> list[Chapter]:
+    if session.get(Book, book_id) is None:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    return list(
+        session.scalars(
+            select(Chapter)
+            .where(Chapter.book_id == book_id)
+            .order_by(Chapter.sort_order, Chapter.chapter_number)
+        ).all()
+    )
+
+
 @router.post(
     "/books/{book_id}/chapters",
     response_model=ChapterRead,
