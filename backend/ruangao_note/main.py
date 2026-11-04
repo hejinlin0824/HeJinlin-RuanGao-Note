@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ruangao_note import __version__
 from ruangao_note.core.config import get_settings
 from ruangao_note.db.session import get_engine
+from ruangao_note.api.routes import router as library_router
 
 settings = get_settings()
 
@@ -15,6 +16,9 @@ app = FastAPI(
     version=__version__,
     description="A traceable textbook knowledge structuring and review system.",
 )
+
+
+app.include_router(library_router)
 
 
 @app.get("/health/live", tags=["health"])
