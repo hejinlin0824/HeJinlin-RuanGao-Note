@@ -1,9 +1,12 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from ruangao_note import __version__
 from ruangao_note.core.config import get_settings
+from ruangao_note.db.session import get_engine
 
 settings = get_settings()
 
@@ -16,11 +19,19 @@ app = FastAPI(
 
 @app.get("/health/live", tags=["health"])
 def liveness() -> dict[str, str]:
-    """Return process liveness."""
+    """Return process liveness without depending on external services."""
     return {"status": "ok"}
 
 
 @app.get("/health/ready", tags=["health"])
 def readiness() -> dict[str, str]:
-    """Return readiness; dependency checks will be added with TP-02."""
+    """Check that the configured database can accept a simple query."""
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Database is not ready.",
+        ) from exc
     return {"status": "ready"}
