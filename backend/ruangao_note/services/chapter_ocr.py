@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 from io import BytesIO
-from typing import Any
 
 from PIL import Image, ImageOps
 from sqlalchemy import select
