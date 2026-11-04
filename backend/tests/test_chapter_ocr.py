@@ -96,7 +96,12 @@ def test_chapter_ocr_creates_one_processing_run_for_all_pages(tmp_path, monkeypa
                 "language": "ch",
                 "artifacts": {
                     "markdown": {"full.md": "# Chapter\n\nRecognized text"},
-                    "json": {},
+                    "json": {
+                        "content_list.json": [
+                            {"type": "title", "page_idx": 0, "text": "第一节"},
+                            {"type": "text", "page_idx": 1, "text": "第二页正文"},
+                        ]
+                    },
                     "files": ["full.md"],
                 },
             }
@@ -119,6 +124,9 @@ def test_chapter_ocr_creates_one_processing_run_for_all_pages(tmp_path, monkeypa
         assert run.normalized_result["artifacts"]["markdown"]["full.md"].startswith(
             "# Chapter"
         )
+        assert run.normalized_result["source_block_count"] == 2
+        assert "source:" in run.normalized_result["anchored_markdown"]
+        assert session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
         assert len(
             session.query(ProcessingRun)
             .filter_by(chapter_id=chapter.id, task_type="chapter_ocr")
