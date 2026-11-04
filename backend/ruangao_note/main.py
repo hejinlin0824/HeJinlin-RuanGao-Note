@@ -3,9 +3,12 @@
 from fastapi import FastAPI
 
 from ruangao_note import __version__
+from ruangao_note.core.config import get_settings
+
+settings = get_settings()
 
 app = FastAPI(
-    title="RuanGao Note API",
+    title=settings.app_name,
     version=__version__,
     description="A traceable textbook knowledge structuring and review system.",
 )
