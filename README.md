@@ -61,6 +61,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
 
 默认图片目录为 `./data/uploads`，不进入 Git。可通过 `STORAGE_DIR`、`MAX_IMAGE_BYTES`、`MAX_BATCH_UPLOAD_BYTES`、`MAX_BATCH_UPLOAD_COUNT`、`MAX_IMAGE_PIXELS` 配置上传限制。
 
+MinerU 网络诊断（Windows 一键运行）：
+
+- 双击项目根目录的 `diagnose_mineru_network.bat` 即可运行，无需激活 Python 虚拟环境。
+- 也可执行：`powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\diagnose_mineru_network.ps1`。
+- 自动检查 `mineru.net` 和 `cdn-mineru.openxlab.org.cn` 的 DNS、TCP 443、TLS 1.2、curl HTTPS、Python httpx（分别测试系统代理启用/禁用），并记录 WinHTTP/当前用户代理配置。
+- 诊断日志自动保存在项目根目录，文件名为 `mineru_network_diagnostic_时间戳.txt`。把日志发给开发者即可分析。
+- 脚本只做网络诊断，不读取 `.env`、不读取/打印 MinerU Token、不提交 OCR、不修改系统代理或防火墙。CDN 根路径返回 403/404/405 也可能代表网络链路已成功到达服务器；不能据此保证签名 ZIP 下载一定成功。
+
 OCR 处理 API（TP-04）：
 
 - `POST /api/chapters/{chapter_id}/ocr`：把该章节全部活动页面按 `sort_order` 合成为一个多页 PDF，提交一个 MinerU v4 云端 batch 任务。
