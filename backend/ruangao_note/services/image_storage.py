@@ -14,7 +14,6 @@ from PIL import Image, UnidentifiedImageError
 
 from ruangao_note.core.config import get_settings
 
-
 FORMAT_INFO = {
     "JPEG": ("image/jpeg", ".jpg"),
     "PNG": ("image/png", ".png"),
