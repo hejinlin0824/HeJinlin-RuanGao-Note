@@ -31,8 +31,6 @@ jobs:
         run: |
           alembic upgrade head
           alembic current
-      - name: Diagnose Ruff import fixes
-        run: ruff check --fix --diff . || true
       - name: Lint
         run: ruff check .
       - name: Test
