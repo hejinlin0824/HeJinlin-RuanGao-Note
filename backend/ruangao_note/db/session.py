@@ -1,5 +1,6 @@
 """Database engine and session factory helpers."""
 
+from collections.abc import Generator
 from functools import lru_cache
 from pathlib import Path
 
@@ -47,3 +48,12 @@ def get_engine() -> Engine:
 def get_session_factory() -> sessionmaker[Session]:
     """Return the process-wide SQLAlchemy session factory."""
     return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
+
+
+def get_db() -> Generator[Session, None, None]:
+    """Yield a request-scoped session and always close it afterwards."""
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        session.close()
