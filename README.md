@@ -10,6 +10,7 @@ TP-01、TP-02 已完成本地验收。当前在 dev 分支实施 TP-03：教材�
 
 - [产品规格说明书（Spec）](docs/PROJECT_SPEC.md)
 - [任务包与实施路线图](docs/TASK_PACKAGES.md)
+- [TP-03 图片导入本地验收说明](docs/TP03_ACCEPTANCE.md)
 
 ## 技术基线
 
