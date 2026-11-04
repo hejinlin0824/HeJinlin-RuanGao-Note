@@ -126,7 +126,9 @@ def test_chapter_ocr_creates_one_processing_run_for_all_pages(tmp_path, monkeypa
         )
         assert run.normalized_result["source_block_count"] == 2
         assert "source:" in run.normalized_result["anchored_markdown"]
-        assert session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
+        assert (
+            session.query(SourceBlock).filter_by(processing_run_id=run.id).count() == 2
+        )
         assert len(
             session.query(ProcessingRun)
             .filter_by(chapter_id=chapter.id, task_type="chapter_ocr")
@@ -337,7 +339,7 @@ def test_mineru_content_list_maps_blocks_and_flags_cleanup_candidates_without_de
 
 
 def test_source_block_materialization_is_idempotent_and_keeps_page_anchor(tmp_path):
-    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+    engine, session, chapter, pages, _storage = chapter_context(tmp_path)
     try:
         run = ProcessingRun(
             chapter_id=chapter.id,
@@ -732,7 +734,9 @@ def test_materialize_repairs_previously_empty_source_blocks_preserving_ids(tmp_p
                 block_key=f"old-empty-{index}",
                 block_type="paragraph",
                 text="",
-                content_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                content_hash=(
+                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                ),
                 version=1,
                 sort_order=index,
                 is_active=True,
