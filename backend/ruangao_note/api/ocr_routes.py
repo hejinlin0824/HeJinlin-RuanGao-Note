@@ -113,7 +113,10 @@ def list_chapter_source_blocks(
         raise HTTPException(status_code=404, detail="OCR run not found in this chapter.")
     blocks = session.scalars(
         select(SourceBlock)
-        .where(SourceBlock.processing_run_id == run_id)
+        .where(
+            SourceBlock.processing_run_id == run_id,
+            SourceBlock.is_active.is_(True),
+        )
         .order_by(SourceBlock.sort_order, SourceBlock.id)
     ).all()
     return [_source_block_payload(block) for block in blocks]
