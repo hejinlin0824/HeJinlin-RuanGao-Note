@@ -396,12 +396,23 @@
 | 任务包 | 状态 | 说明 |
 |---|---|---|
 | TP-00 | 文档已落盘 | README、Spec、任务包路线图 |
-| TP-01 | 待开始 | 下一个执行任务 |
+| TP-01 | 实现中（待运行验收） | 已建立 Python 3.13 项目配置、FastAPI 健康检查、环境配置、pytest 测试和 GitHub Actions CI；尚未取得实际 CI 通过结果 |
 | TP-02～TP-16 | 待开始 | 按依赖顺序推进 |
 
-## 6. 第一轮具体执行顺序
+## 6. TP-01 当前实现记录
 
-1. TP-01：先检查仓库、Python 3.13.15、依赖兼容性和最小启动。
+已在 dev 分支建立：
+- .python-version（3.13.15）和 pyproject.toml（要求 Python >=3.13,<3.14）。
+- FastAPI 应用入口、/health/live 与 /health/ready。
+- 基于环境变量的 Pydantic Settings。
+- pytest 健康检查与配置测试。
+- Ruff 配置、GitHub Actions Python CI、.gitignore 和 .env.example。
+
+待完成验收：在实际 Python 3.13.15 环境执行 pip install -e ".[dev]"、ruff check .、pytest，并确认 GitHub Actions 成功。未获得运行结果前，不将 TP-01 标记为完成。
+
+## 7. 第一轮具体执行顺序
+
+1. TP-01：完成本地/CI 验收，确认 Python 3.13.15、依赖兼容性和最小启动。
 2. TP-02：确定领域模型与数据库迁移。
 3. TP-03：打通图片上传和页面管理。
 4. TP-04：接入 OCR Provider 和图像预处理。
