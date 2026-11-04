@@ -69,7 +69,7 @@ OCR 处理 API（TP-04）：
 - 每次 POST 都会新建 ProcessingRun；失败记录不会覆盖，重复 POST 即创建新的处理尝试。
 - 单页 Mock Provider 明确返回模拟标记和空文本块，不会生成虚构 OCR 文本。
 - 章节 MinerU 接口使用 v4 流程：申请批量上传地址 → 预签名 PUT → 轮询 batch → 下载 ZIP。
-- Token 只从项目根目录本地 `.env` 的 `MINERU_TOKEN` 读取。运行 `.\\scripts\\configure_mineru.ps1` 可隐藏输入并保存，不需要把 Token 发到聊天或提交 Git。
+- Token 只从项目根目录本地 `.env` 的 `MINERU_TOKEN` 读取。运行 `.\scripts\configure_mineru.ps1` 可隐藏输入并保存，不需要把 Token 发到聊天或提交 Git。
 - `.env` 已在 `.gitignore` 中排除；`.env.example` 只包含空变量。
 - 章节 PDF 是临时内存产物，按页面顺序构建；原始图片不会被修改。
 - MinerU 的 Markdown/JSON 解析产物保存在章节级 ProcessingRun；SourceBlock、稳定锚点与正文清洗属于 TP-05，尚未实现。
