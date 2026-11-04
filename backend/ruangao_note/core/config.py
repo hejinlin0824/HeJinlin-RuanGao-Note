@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,10 +14,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "sqlite:///./data/ruangao_note.db"
     storage_dir: str = "./data/uploads"
-    max_image_bytes: int = 20 * 1024 * 1024
-    max_batch_upload_bytes: int = 300 * 1024 * 1024
-    max_batch_upload_count: int = 30
-    max_image_pixels: int = 60_000_000
+    max_image_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
+    max_batch_upload_bytes: int = Field(default=300 * 1024 * 1024, gt=0)
+    max_batch_upload_count: int = Field(default=30, ge=1, le=30)
+    max_image_pixels: int = Field(default=60_000_000, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",
