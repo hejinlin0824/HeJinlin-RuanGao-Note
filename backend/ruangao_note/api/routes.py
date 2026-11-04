@@ -258,7 +258,6 @@ def preview_page(chapter_id: str, page_id: str, session: Session = Depends(get_d
         select(ChapterPage).where(
             ChapterPage.id == page_id,
             ChapterPage.chapter_id == chapter_id,
-            ChapterPage.status == "stored",
         )
     )
     if page is None:
