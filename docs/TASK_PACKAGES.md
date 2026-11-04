@@ -435,13 +435,13 @@
 - 初始 Repository/Service：BookRepository、BookService。
 - Alembic 配置与初始迁移：alembic.ini、backend/alembic。
 - readiness 接口现在执行数据库 SELECT 1；数据库不可用时返回 HTTP 503。
-- 自动化测试覆盖表结构、知识点—原文多对多、目录树与知识树分离、关系端点约束、SQLite 外键和 BookService。
+- 自动化测试覆盖表结构、知识点—原文多对多、关系—原文证据关联、目录树与知识树分离、关系端点约束、SQLite 外键和 BookService。
 
 ### 关键建模约束
 
 1. Section.parent_id 只表达教材目录树；KnowledgeNode.parent_id 只表达知识点学习层级，二者完全独立。
 2. KnowledgeSource 是独立关联表，一个知识点可引用多个 SourceBlock，一个 SourceBlock 也可被多个知识点引用。
-3. Relation 的端点必须是完整的“知识点—知识点”或“章节—章节”组合，不能混用；关系方向、类型、来源和审核状态独立保存。
+3. Relation 的端点必须是完整的“知识点—知识点”或“章节—章节”组合，不能混用；关系方向、类型、来源和审核状态独立保存。RelationEvidence 通过外键关联真实 SourceBlock，避免把无法校验的来源 ID 塞进自由文本。
 4. SourceBlock 必须关联 ChapterPage 和 ProcessingRun，原文证据带有处理版本。
 5. ReviewState/AnswerLog 通过 target_type + target_id 支持知识点或题目两种复习粒度；这两处是有意采用的多态引用，后续服务层必须验证目标存在。
 
