@@ -15,6 +15,10 @@ from ruangao_note.db.base import utc_now
 from ruangao_note.domain.models import Chapter, ChapterPage, ProcessingRun
 from ruangao_note.services.image_storage import ImageStorage
 from ruangao_note.services.mineru_cloud import MinerUCloudParser, MinerUSettings
+from ruangao_note.services.source_blocks import (
+    materialize_source_blocks,
+    render_anchored_markdown,
+)
 
 
 class ChapterOCRNotFoundError(LookupError):
@@ -104,6 +108,17 @@ class ChapterOCRService:
         self.storage = storage or ImageStorage()
         self.parser = parser
 
+    def _attach_source_blocks(self, run: ProcessingRun) -> None:
+        blocks, report = materialize_source_blocks(self.session, run)
+        quality = dict(run.quality_report or {})
+        quality["source_blocks"] = report
+        run.quality_report = quality
+        if blocks:
+            normalized = dict(run.normalized_result or {})
+            normalized["source_block_count"] = len(blocks)
+            normalized["anchored_markdown"] = render_anchored_markdown(blocks)
+            run.normalized_result = normalized
+
     def resume_run(self, chapter_id: str, run_id: str) -> ProcessingRun:
         """Resume result retrieval for an existing MinerU batch; never resubmit its PDF."""
         run = self.session.scalar(
@@ -171,6 +186,7 @@ class ChapterOCRService:
                 ],
             }
             run.status = "succeeded"
+            self._attach_source_blocks(run)
             run.completed_at = utc_now()
             self.session.commit()
             self.session.refresh(run)
@@ -247,7 +263,7 @@ class ChapterOCRService:
                     language=settings.mineru_language,
                     poll_interval_seconds=settings.mineru_poll_interval_seconds,
                     max_wait_seconds=settings.mineru_max_wait_seconds,
-                download_proxy=getattr(settings, "mineru_download_proxy", None),
+                    download_proxy=getattr(settings, "mineru_download_proxy", None),
                 )
             )
             def persist_batch_id(batch_id: str) -> None:
@@ -294,10 +310,10 @@ class ChapterOCRService:
                 "source_images_preserved": True,
                 "notes": [
                     "All active chapter pages were submitted as one ordered PDF.",
-                    "SourceBlock creation and page-level block anchoring are handled in TP-05.",
                 ],
             }
             run.status = "succeeded"
+            self._attach_source_blocks(run)
             run.completed_at = utc_now()
             self.session.commit()
             self.session.refresh(run)
