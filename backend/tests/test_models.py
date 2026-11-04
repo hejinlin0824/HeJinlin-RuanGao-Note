@@ -16,7 +16,6 @@ from ruangao_note.domain.models import (
     ProcessingRun,
     Relation,
     RelationEvidence,
-    Relation,
     Section,
     SourceBlock,
 )
