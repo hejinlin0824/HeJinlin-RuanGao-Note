@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     max_batch_upload_count: int = Field(default=30, ge=1, le=30)
     max_image_pixels: int = Field(default=60_000_000, gt=0)
 
+    # MinerU v4 cloud batch API. Keep the token in the ignored local .env file.
+    mineru_token: str = ""
+    mineru_api_base_url: str = "https://mineru.net"
+    mineru_model_version: str = "vlm"
+    mineru_language: str = "ch"
+    mineru_poll_interval_seconds: float = Field(default=5.0, gt=0, le=60)
+    mineru_max_wait_seconds: int = Field(default=1500, gt=0, le=7200)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
