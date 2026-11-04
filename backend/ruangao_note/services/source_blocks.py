@@ -411,13 +411,19 @@ def build_source_block_payloads(
         }
         if not text:
             content = item.get("content")
-            content_keys = sorted(str(key) for key in content) if isinstance(content, dict) else []
+            content_keys = (
+                sorted(str(key) for key in content)
+                if isinstance(content, dict)
+                else []
+            )
             media_path = item.get("img_path") or item.get("image_path")
             if not media_path and isinstance(content, dict):
                 media_path = content.get("img_path") or content.get("image_path")
             payload["empty_diagnostic"] = {
                 "entry_index": entry_index,
-                "raw_type": str(item.get("type") or item.get("block_type") or "unknown"),
+                "raw_type": str(
+                    item.get("type") or item.get("block_type") or "unknown"
+                ),
                 "top_level_keys": sorted(str(key) for key in item),
                 "content_keys": content_keys,
                 "media_path": str(media_path) if media_path else None,
@@ -482,9 +488,7 @@ def build_source_block_payloads(
         warnings.append(
             "Layout entries were found, but none matched the saved PDF page references."
         )
-    if visual_only_empty_count:
-        # Visual blocks can be valid evidence even when no caption text was recognized.
-        pass
+    # Visual blocks can be valid evidence even when no caption text was recognized.
     if unexpected_empty_count:
         warnings.append(
             f"{unexpected_empty_count} non-visual layout blocks contain no extractable text. "
