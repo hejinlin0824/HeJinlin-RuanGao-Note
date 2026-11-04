@@ -242,6 +242,55 @@ def test_failed_chapter_ocr_run_resumes_existing_batch_without_resubmission(
 
 
 
+
+
+def test_source_block_index_failure_does_not_fail_successful_ocr(tmp_path, monkeypatch):
+    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+
+    class FakeParser:
+        def parse_pdf(self, pdf_bytes, filename, *, on_batch_created=None):
+            if on_batch_created:
+                on_batch_created("batch-source-index-error")
+            return {
+                "batch_id": "batch-source-index-error",
+                "state": "done",
+                "model_version": "vlm",
+                "language": "ch",
+                "artifacts": {
+                    "markdown": {"full.md": "# OCR completed"},
+                    "json": {
+                        "content_list.json": [
+                            {"type": "text", "page_idx": 0, "text": "text"}
+                        ]
+                    },
+                    "files": ["full.md", "content_list.json"],
+                },
+            }
+
+    monkeypatch.setattr(
+        "ruangao_note.services.chapter_ocr.get_settings",
+        lambda: SimpleNamespace(mineru_model_version="vlm"),
+    )
+    monkeypatch.setattr(
+        "ruangao_note.services.chapter_ocr.materialize_source_blocks",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("index error")),
+    )
+    try:
+        run = ChapterOCRService(
+            session, storage=storage, parser=FakeParser()
+        ).process_chapter(chapter.id)
+
+        assert run.status == "succeeded"
+        assert run.normalized_result["artifacts"]["markdown"]["full.md"] == (
+            "# OCR completed"
+        )
+        assert "SourceBlock materialization failed (RuntimeError)" in (
+            run.quality_report["source_blocks"]["warnings"][0]
+        )
+    finally:
+        session.close()
+        engine.dispose()
+
 def test_mineru_content_list_maps_blocks_and_flags_cleanup_candidates_without_deleting():
     artifacts = {
         "json": {
