@@ -100,6 +100,87 @@ class ChapterOCRService:
         self.storage = storage or ImageStorage()
         self.parser = parser
 
+    def resume_run(self, chapter_id: str, run_id: str) -> ProcessingRun:
+        """Resume result retrieval for an existing MinerU batch; never resubmit its PDF."""
+        run = self.session.scalar(
+            select(ProcessingRun).where(
+                ProcessingRun.id == run_id,
+                ProcessingRun.chapter_id == chapter_id,
+                ProcessingRun.task_type == "chapter_ocr",
+                ProcessingRun.provider == "mineru_cloud",
+            )
+        )
+        if run is None:
+            raise ChapterOCRNotFoundError("OCR run not found in this chapter.")
+        raw = run.raw_result if isinstance(run.raw_result, dict) else {}
+        batch_id = raw.get("batch_id")
+        if run.status != "failed" or not batch_id:
+            raise ChapterOCRNotFoundError(
+                "Only failed MinerU runs with a saved batch_id can be resumed."
+            )
+
+        settings = get_settings()
+        parser = self.parser or MinerUCloudParser(
+            MinerUSettings(
+                token=settings.mineru_token,
+                api_base_url=settings.mineru_api_base_url,
+                model_version=settings.mineru_model_version,
+                language=settings.mineru_language,
+                poll_interval_seconds=settings.mineru_poll_interval_seconds,
+                max_wait_seconds=settings.mineru_max_wait_seconds,
+            )
+        )
+        run.status = "running"
+        run.error_message = None
+        run.started_at = utc_now()
+        self.session.commit()
+        try:
+            result = parser.resume_batch(str(batch_id))
+            page_references = raw.get("page_references") or []
+            page_count = int(raw.get("page_count") or len(page_references))
+            run.raw_result = {
+                **raw,
+                "state": result["state"],
+                "model_version": result["model_version"],
+                "language": result["language"],
+                "recovery": {"method": "download_existing_batch", "resubmitted": False},
+            }
+            run.normalized_result = {
+                "schema_version": "1.0",
+                "provider": "mineru_cloud",
+                "provider_version": run.provider_version,
+                "document_type": "chapter",
+                "page_count": page_count,
+                "page_references": page_references,
+                "artifacts": result["artifacts"],
+            }
+            run.quality_report = {
+                "page_count": page_count,
+                "pdf_size_bytes": raw.get("pdf_size_bytes"),
+                "source_images_preserved": True,
+                "recovered_existing_batch": True,
+                "notes": [
+                    "Results were retrieved from the existing MinerU batch.",
+                    "The PDF was not uploaded again and no new batch was created.",
+                ],
+            }
+            run.status = "succeeded"
+            run.completed_at = utc_now()
+            self.session.commit()
+            self.session.refresh(run)
+            return run
+        except Exception as exc:
+            self.session.rollback()
+            failed_run = self.session.get(ProcessingRun, run_id)
+            if failed_run is None:
+                raise
+            failed_run.status = "failed"
+            failed_run.error_message = f"{type(exc).__name__}: {exc}"[:4000]
+            failed_run.completed_at = utc_now()
+            self.session.commit()
+            self.session.refresh(failed_run)
+            return failed_run
+
     def process_chapter(self, chapter_id: str) -> ProcessingRun:
         chapter = self.session.get(Chapter, chapter_id)
         pages = self.session.scalars(
