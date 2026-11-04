@@ -163,6 +163,8 @@ class ProcessingRun(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(24), default="queued", nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     raw_result: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSON)
+    normalized_result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_report: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
