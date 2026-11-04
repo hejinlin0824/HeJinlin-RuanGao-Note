@@ -104,35 +104,7 @@ class MinerUCloudParser:
                     f"MinerU batch {batch_id} completed without a result ZIP URL."
                 )
 
-            # The result ZIP lives on pre-signed object storage, not the MinerU
-            # API host. Use a fresh unauthenticated connection for each attempt:
-            # this avoids reusing a potentially poisoned API connection pool and
-            # ensures no MinerU Bearer token is sent to the storage host.
-            archive_response = None
-            last_error: httpx.HTTPError | None = None
-            download_host = urlsplit(str(zip_url)).hostname or "unknown host"
-            for attempt in range(1, 4):
-                try:
-                    with self.client_factory(
-                        timeout=httpx.Timeout(300.0, connect=30.0),
-                        follow_redirects=True,
-                    ) as download_client:
-                        archive_response = download_client.get(str(zip_url))
-                        archive_response.raise_for_status()
-                    last_error = None
-                    break
-                except httpx.HTTPError as exc:
-                    last_error = exc
-                    if attempt < 3:
-                        self.sleep(float(attempt * 3))
-            if last_error is not None:
-                raise self._network_error(
-                    f"downloading the result ZIP for MinerU batch {batch_id} "
-                    f"from storage host {download_host} after 3 attempts",
-                    last_error,
-                ) from last_error
-            assert archive_response is not None
-            artifacts = self._read_result_zip(archive_response.content)
+            artifacts = self._download_result_zip(str(zip_url), str(batch_id))
 
         return {
             "batch_id": str(batch_id),
@@ -141,6 +113,62 @@ class MinerUCloudParser:
             "language": self.settings.language,
             "artifacts": artifacts,
         }
+
+    def resume_batch(self, batch_id: str) -> dict[str, Any]:
+        """Fetch an existing batch's latest result without uploading or resubmitting."""
+        if not batch_id.strip():
+            raise ValueError("MinerU batch_id is required.")
+        base = self.settings.api_base_url.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {self.settings.token}",
+            "Content-Type": "application/json",
+        }
+        with self.client_factory(
+            timeout=httpx.Timeout(60.0, connect=20.0),
+            follow_redirects=True,
+        ) as client:
+            result_item = self._poll_result(client, base, headers, batch_id)
+        zip_url = result_item.get("full_zip_url")
+        if not zip_url:
+            raise MinerUError(
+                f"MinerU batch {batch_id} completed without a result ZIP URL. "
+                "The provider may have expired the result."
+            )
+        return {
+            "batch_id": batch_id,
+            "state": "done",
+            "model_version": self.settings.model_version,
+            "language": self.settings.language,
+            "artifacts": self._download_result_zip(str(zip_url), batch_id),
+        }
+
+    def _download_result_zip(self, zip_url: str, batch_id: str) -> dict[str, Any]:
+        """Download a pre-signed result URL with fresh unauthenticated connections."""
+        archive_response = None
+        last_error: httpx.HTTPError | None = None
+        download_host = urlsplit(zip_url).hostname or "unknown host"
+        for attempt in range(1, 4):
+            try:
+                with self.client_factory(
+                    timeout=httpx.Timeout(300.0, connect=30.0),
+                    follow_redirects=True,
+                ) as download_client:
+                    archive_response = download_client.get(zip_url)
+                    archive_response.raise_for_status()
+                last_error = None
+                break
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt < 3:
+                    self.sleep(float(attempt * 3))
+        if last_error is not None:
+            raise self._network_error(
+                f"downloading the result ZIP for MinerU batch {batch_id} "
+                f"from storage host {download_host} after 3 attempts",
+                last_error,
+            ) from last_error
+        assert archive_response is not None
+        return self._read_result_zip(archive_response.content)
 
     def _poll_result(
         self,
