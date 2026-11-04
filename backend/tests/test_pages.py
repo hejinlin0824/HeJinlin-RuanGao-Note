@@ -3,9 +3,9 @@
 from io import BytesIO
 
 import pytest
-from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from PIL import Image
 
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine
