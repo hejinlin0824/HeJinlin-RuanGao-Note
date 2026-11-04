@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：TP-00～TP-03 已完成验收；TP-04 已包含 Mock OCR、MinerU v4 云端章节批量解析、隐藏式本地 Token 配置和章节 PDF 组装测试；等待 GitHub CI 与 Windows 云端验收。
+- 当前阶段：TP-00～TP-03 已完成验收；TP-04 已包含 Mock OCR、MinerU v4 云端章节批量解析、隐藏式本地 Token 配置和章节 PDF 组装测试；GitHub Actions 已通过（35 passed），等待 Windows 本地与真实云端验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -401,7 +401,7 @@
 | TP-01 | 已完成 | Python 3.13.15、Ruff、pytest、FastAPI 启动和健康检查已验收 |
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
-| TP-04 | MinerU 云端章节批处理已实现，CI/本地验收待完成 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
+| TP-04 | GitHub CI 通过，待 Windows/真实云端验收 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
 | TP-05～TP-16 | 待开始 | 按依赖顺序推进 |
 
 ## 6. TP-01 当前实现记录
