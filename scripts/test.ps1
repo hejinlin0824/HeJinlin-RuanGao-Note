@@ -7,6 +7,7 @@ $python = Join-Path $root ".venv\Scripts\python.exe"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ruangao-note-test-" + [guid]::NewGuid().ToString("N"))
 $dbPath = Join-Path $tempRoot "migration-test.db"
 $previousDatabaseUrl = $env:DATABASE_URL
+$locationPushed = $false
 
 function Invoke-Check {
     param([string]$Title, [scriptblock]$Command)
@@ -22,6 +23,7 @@ try {
         throw "Cannot find .venv Python: $python. Create the environment and install dependencies first."
     }
     Push-Location $root
+    $locationPushed = $true
     Invoke-Check "Python version" {
         & $python -c "import sys; print(sys.version); assert sys.version_info[:3] == (3, 13, 15), 'Expected Python 3.13.15'"
     }
@@ -53,5 +55,5 @@ finally {
     if ($null -eq $previousDatabaseUrl) { Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue }
     else { $env:DATABASE_URL = $previousDatabaseUrl }
     if (Test-Path $tempRoot) { Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
-    if ((Get-Location).Path -eq $root) { Pop-Location }
+    if ($locationPushed) { Pop-Location }
 }
