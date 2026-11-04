@@ -118,6 +118,9 @@ class ChapterPage(TimestampMixin, Base):
     chapter_id: Mapped[str] = mapped_column(
         ForeignKey("chapters.id", ondelete="RESTRICT"), nullable=False
     )
+    replaces_page_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chapter_pages.id", ondelete="RESTRICT")
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     textbook_page_number: Mapped[int | None] = mapped_column(Integer)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
