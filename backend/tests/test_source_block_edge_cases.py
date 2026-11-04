@@ -109,7 +109,7 @@ def test_paragraph_content_with_nested_spans_is_extracted():
     blocks, report = build_source_block_payloads(artifacts, references)
 
     assert len(blocks) == 1
-    assert blocks[0]["text"] == "段落正文被正确提取\\nx+y"
+    assert blocks[0]["text"] == "段落正文被正确提取\nx+y"
     assert report["empty_text_entries"] == 0
     assert report["unexpected_empty_text_entries"] == 0
     assert report["warnings"] == []
