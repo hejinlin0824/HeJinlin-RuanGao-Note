@@ -144,7 +144,10 @@ async def upload_pages(
         content = await file.read(settings.max_image_bytes + 1)
         total_size += len(content)
         if total_size > settings.max_batch_upload_bytes:
-            raise HTTPException(status_code=413, detail="Upload batch exceeds the total size limit.")
+            raise HTTPException(
+                status_code=413,
+                detail="Upload batch exceeds the total size limit.",
+            )
         uploads.append(
             PageUpload(
                 filename=file.filename or f"page-{index + 1}",
