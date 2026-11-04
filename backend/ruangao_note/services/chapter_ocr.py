@@ -149,9 +149,23 @@ class ChapterOCRService:
                     max_wait_seconds=settings.mineru_max_wait_seconds,
                 )
             )
+            def persist_batch_id(batch_id: str) -> None:
+                # Keep the remote task ID durable even if upload/poll/download fails.
+                run.raw_result = {
+                    "batch_id": batch_id,
+                    "state": "submitted",
+                    "stage": "batch_created",
+                    "pdf_sha256": pdf_sha256,
+                    "pdf_size_bytes": len(pdf_bytes),
+                    "page_count": len(page_references),
+                    "page_references": [asdict(item) for item in page_references],
+                }
+                self.session.commit()
+
             result = parser.parse_pdf(
                 pdf_bytes,
                 filename=f"chapter-{chapter.chapter_number}-{chapter.id[:8]}.pdf",
+                on_batch_created=persist_batch_id,
             )
             run.raw_result = {
                 "batch_id": result["batch_id"],
