@@ -44,6 +44,7 @@ class MinerUCloudParser:
         self.settings = settings
         self.client_factory = client_factory
         self.sleep = sleep
+        self.last_download_diagnostics: dict[str, Any] | None = None
 
     def parse_pdf(
         self,
@@ -112,6 +113,7 @@ class MinerUCloudParser:
             "model_version": self.settings.model_version,
             "language": self.settings.language,
             "artifacts": artifacts,
+            "download_diagnostics": self.last_download_diagnostics,
         }
 
     def resume_batch(self, batch_id: str) -> dict[str, Any]:
@@ -140,6 +142,7 @@ class MinerUCloudParser:
             "model_version": self.settings.model_version,
             "language": self.settings.language,
             "artifacts": self._download_result_zip(str(zip_url), batch_id),
+            "download_diagnostics": self.last_download_diagnostics,
         }
 
     def _download_result_zip(self, zip_url: str, batch_id: str) -> dict[str, Any]:
@@ -182,6 +185,14 @@ class MinerUCloudParser:
                 if attempt < 3:
                     self.sleep(float(attempt * 3))
         if last_error is not None:
+            self.last_download_diagnostics = {
+                "host": download_host,
+                "http_status": last_status,
+                "attempts": 3,
+                "bytes_received_across_attempts": total_received,
+                "content_length": last_content_length,
+                "proxy": "disabled",
+            }
             status_detail = (
                 f", last_http_status={last_status}" if last_status is not None else ""
             )
@@ -198,6 +209,14 @@ class MinerUCloudParser:
                 last_error,
             ) from last_error
         assert archive_content is not None
+        self.last_download_diagnostics = {
+            "host": download_host,
+            "http_status": last_status,
+            "attempts": attempt,
+            "bytes_received": len(archive_content),
+            "content_length": last_content_length,
+            "proxy": "disabled",
+        }
         return self._read_result_zip(archive_content)
 
     def _poll_result(
