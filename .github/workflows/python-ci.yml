@@ -22,6 +22,10 @@ jobs:
           pip install -e ".[dev]"
       - name: Verify Python version
         run: python --version
+      - name: Verify database migrations
+        run: |
+          alembic upgrade head
+          alembic current
       - name: Lint
         run: ruff check .
       - name: Test
