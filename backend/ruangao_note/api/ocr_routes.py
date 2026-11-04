@@ -85,7 +85,7 @@ def create_chapter_source_blocks(
     if blocks:
         normalized = dict(run.normalized_result or {})
         normalized["source_block_count"] = len(blocks)
-        normalized["anchored_markdown"] = render_anchored_markdown(blocks)
+        normalized["anchored_markdown"] = render_anchored_markdown(blocks, report)
         run.normalized_result = normalized
     session.commit()
     return {
