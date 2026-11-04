@@ -213,6 +213,10 @@ class KnowledgeNode(TimestampMixin, Base):
     __tablename__ = "knowledge_nodes"
     __table_args__ = (
         CheckConstraint("sort_order >= 0", name="ck_knowledge_sort_nonnegative"),
+        CheckConstraint(
+            "status IN ('draft', 'needs_review', 'approved', 'rejected')",
+            name="ck_knowledge_status",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -423,6 +427,18 @@ class Question(TimestampMixin, Base):
     """A review question grounded in one or more source blocks."""
 
     __tablename__ = "questions"
+    __table_args__ = (
+        CheckConstraint(
+            "question_type IN ('fill_blank', 'single_choice', 'short_answer')",
+            name="ck_question_type",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'needs_review', 'approved', 'rejected')",
+            name="ck_question_status",
+        ),
+        CheckConstraint("difficulty IS NULL OR difficulty BETWEEN 1 AND 5",
+                        name="ck_question_difficulty"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     knowledge_node_id: Mapped[str | None] = mapped_column(
@@ -467,6 +483,10 @@ class ReviewState(TimestampMixin, Base):
         UniqueConstraint("learner_id", "target_type", "target_id", name="uq_review_target"),
         CheckConstraint("consecutive_correct >= 0", name="ck_review_correct_nonnegative"),
         CheckConstraint("interval_days >= 0", name="ck_review_interval_nonnegative"),
+        CheckConstraint(
+            "target_type IN ('knowledge_node', 'question')",
+            name="ck_review_target_type",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -485,6 +505,12 @@ class AnswerLog(Base):
     """Immutable record of a learner response or self-assessment."""
 
     __tablename__ = "answer_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('knowledge_node', 'question')",
+            name="ck_answer_target_type",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     review_state_id: Mapped[str | None] = mapped_column(
