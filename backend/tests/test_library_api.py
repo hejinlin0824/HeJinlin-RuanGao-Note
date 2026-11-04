@@ -51,7 +51,14 @@ def test_complete_book_chapter_and_page_api_flow(tmp_path, monkeypatch) -> None:
             assert chapter_list.json()[0]["id"] == chapter_id
 
             files = [
-                ("files", (f"page-{index + 1:02}.png", png_bytes((index, index + 1, index + 2)), "image/png"))
+                (
+                    "files",
+                    (
+                        f"page-{index + 1:02}.png",
+                        png_bytes((index, index + 1, index + 2)),
+                        "image/png",
+                    ),
+                )
                 for index in range(24)
             ]
             upload_response = client.post(
