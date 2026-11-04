@@ -26,6 +26,13 @@ app.include_router(library_router)
 app.include_router(ocr_router)
 
 
+@app.get("/source-review", include_in_schema=False)
+def source_review_page() -> FileResponse:
+    """Serve the source evidence and OCR cleanup review workspace."""
+    page = Path(__file__).resolve().parent / "static" / "source_review.html"
+    return FileResponse(page, media_type="text/html; charset=utf-8")
+
+
 @app.get("/mineru-test", include_in_schema=False)
 def mineru_test_page() -> FileResponse:
     """Serve the standalone MinerU batch-upload and OCR acceptance page."""
