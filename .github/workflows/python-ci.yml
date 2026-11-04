@@ -1,10 +1,16 @@
 name: Python CI
 
 on:
-  push:
-    branches: [main, dev]
+  # Development commits are verified locally with .\\test.bat.
+  # Run hosted CI when a PR targets main, or manually from Actions.
   pull_request:
-    branches: [main, dev]
+    branches: [main]
+  workflow_dispatch:
+
+# If a PR is updated repeatedly, keep only the newest verification run.
+concurrency:
+  group: python-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
