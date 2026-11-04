@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -103,22 +104,31 @@ class MinerUCloudParser:
                     f"MinerU batch {batch_id} completed without a result ZIP URL."
                 )
 
-            # GET is safe to retry; the pre-signed URL receives no Bearer token.
+            # The result ZIP lives on pre-signed object storage, not the MinerU
+            # API host. Use a fresh unauthenticated connection for each attempt:
+            # this avoids reusing a potentially poisoned API connection pool and
+            # ensures no MinerU Bearer token is sent to the storage host.
             archive_response = None
             last_error: httpx.HTTPError | None = None
+            download_host = urlsplit(str(zip_url)).hostname or "unknown host"
             for attempt in range(1, 4):
                 try:
-                    archive_response = client.get(str(zip_url), timeout=300.0)
-                    archive_response.raise_for_status()
+                    with self.client_factory(
+                        timeout=httpx.Timeout(300.0, connect=30.0),
+                        follow_redirects=True,
+                    ) as download_client:
+                        archive_response = download_client.get(str(zip_url))
+                        archive_response.raise_for_status()
                     last_error = None
                     break
                 except httpx.HTTPError as exc:
                     last_error = exc
                     if attempt < 3:
-                        self.sleep(float(attempt * 2))
+                        self.sleep(float(attempt * 3))
             if last_error is not None:
                 raise self._network_error(
-                    f"downloading the result ZIP for MinerU batch {batch_id}",
+                    f"downloading the result ZIP for MinerU batch {batch_id} "
+                    f"from storage host {download_host} after 3 attempts",
                     last_error,
                 ) from last_error
             assert archive_response is not None
