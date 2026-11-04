@@ -91,6 +91,8 @@ def _as_text(value: Any) -> str:
         "children",
         "body",
         "caption",
+        # Some MinerU V2 exports wrap type-specific content in {"spans": [...]}.
+        "spans",
     )
     parts = []
     for key in text_fields:
