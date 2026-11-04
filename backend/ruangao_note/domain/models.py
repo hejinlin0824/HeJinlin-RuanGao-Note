@@ -204,6 +204,7 @@ class SourceBlock(TimestampMixin, Base):
     page: Mapped[ChapterPage] = relationship(back_populates="source_blocks")
     processing_run: Mapped[ProcessingRun] = relationship(back_populates="source_blocks")
     knowledge_sources: Mapped[list[KnowledgeSource]] = relationship(back_populates="source_block")
+    relation_evidence: Mapped[list[RelationEvidence]] = relationship(back_populates="source_block")
 
 
 class KnowledgeNode(TimestampMixin, Base):
@@ -316,6 +317,28 @@ class Relation(TimestampMixin, Base):
     target_node: Mapped[KnowledgeNode | None] = relationship(
         foreign_keys=[target_node_id], back_populates="incoming_relations"
     )
+    evidence: Mapped[list[RelationEvidence]] = relationship(back_populates="relation")
+
+
+class RelationEvidence(Base):
+    """Evidence blocks supporting a proposed or approved relation edge."""
+
+    __tablename__ = "relation_evidence"
+
+    relation_id: Mapped[str] = mapped_column(
+        ForeignKey("relations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    source_block_id: Mapped[str] = mapped_column(
+        ForeignKey("source_blocks.id", ondelete="RESTRICT"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(40), default="support", nullable=False)
+    quote_text: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    relation: Mapped[Relation] = relationship(back_populates="evidence")
+    source_block: Mapped[SourceBlock] = relationship(back_populates="relation_evidence")
 
 
 class Figure(TimestampMixin, Base):
