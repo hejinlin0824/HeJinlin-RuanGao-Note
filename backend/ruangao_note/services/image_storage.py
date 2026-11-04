@@ -61,7 +61,9 @@ class ImageStorage:
                     raise InvalidImageError("Only JPEG, PNG, WEBP, and TIFF images are allowed.")
                 width, height = image.size
                 if width <= 0 or height <= 0 or width * height > settings.max_image_pixels:
-                    raise InvalidImageError("Image dimensions are invalid or exceed the pixel limit.")
+                    raise InvalidImageError(
+                        "Image dimensions are invalid or exceed the pixel limit."
+                    )
                 image.verify()
         except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
             raise InvalidImageError("Uploaded file is not a valid supported image.") from exc
