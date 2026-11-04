@@ -223,4 +223,9 @@ class PageService:
         return value if value is not None else -1
 
     def _next_order(self, chapter_id: str) -> int:
-        return self._max_order(chapter_id) + 1
+        value = self.session.scalar(
+            select(func.max(ChapterPage.sort_order)).where(
+                ChapterPage.chapter_id == chapter_id, ChapterPage.status == "stored"
+            )
+        )
+        return (value if value is not None else -1) + 1
