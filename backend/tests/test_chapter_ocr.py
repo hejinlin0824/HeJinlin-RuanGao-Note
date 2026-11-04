@@ -288,6 +288,10 @@ def test_mineru_result_download_uses_direct_fresh_client_and_streams_zip():
     )
 
     assert result["markdown"]["full.md"] == "# Direct download"
+    assert parser.last_download_diagnostics["host"] == "cdn.example"
+    assert parser.last_download_diagnostics["http_status"] == 200
+    assert parser.last_download_diagnostics["attempts"] == 1
+    assert parser.last_download_diagnostics["proxy"] == "disabled"
 
 
 def test_mineru_zip_parser_rejects_path_traversal():
