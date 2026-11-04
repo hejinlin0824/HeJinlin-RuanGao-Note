@@ -289,6 +289,20 @@ class Relation(TimestampMixin, Base):
                         name="ck_relation_chapter_not_self"),
         CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
                         name="ck_relation_confidence_range"),
+        CheckConstraint(
+            "relation_type IN ('contains', 'prerequisite', 'sequence', 'causes', "
+            "'contrast', 'association', 'application', 'implements', 'example_of', 'same_as')",
+            name="ck_relation_type",
+        ),
+        CheckConstraint("direction IN ('directed', 'undirected)", name="ck_relation_direction"),
+        CheckConstraint(
+            "origin IN ('text_explicit', 'human_inferred', 'model_candidate', 'system_derived')",
+            name="ck_relation_origin",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'needs_review', 'approved', 'rejected')",
+            name="ck_relation_status",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
