@@ -73,9 +73,13 @@ def test_chapter_ocr_creates_one_processing_run_for_all_pages(tmp_path, monkeypa
     engine, session, chapter, pages, storage = chapter_context(tmp_path)
 
     class FakeParser:
-        def parse_pdf(self, pdf_bytes: bytes, filename: str) -> dict:
+        def parse_pdf(
+            self, pdf_bytes: bytes, filename: str, *, on_batch_created=None
+        ) -> dict:
             assert pdf_bytes.startswith(b"%PDF")
             assert filename.endswith(".pdf")
+            if on_batch_created is not None:
+                on_batch_created("batch-test-001")
             return {
                 "batch_id": "batch-test-001",
                 "state": "done",
@@ -111,6 +115,37 @@ def test_chapter_ocr_creates_one_processing_run_for_all_pages(tmp_path, monkeypa
             .filter_by(chapter_id=chapter.id, task_type="chapter_ocr")
             .all()
         ) == 1
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_chapter_ocr_preserves_batch_id_when_network_fails_after_submission(
+    tmp_path, monkeypatch
+):
+    engine, session, chapter, pages, storage = chapter_context(tmp_path)
+
+    class InterruptedParser:
+        def parse_pdf(
+            self, pdf_bytes: bytes, filename: str, *, on_batch_created=None
+        ) -> dict:
+            assert on_batch_created is not None
+            on_batch_created("batch-created-before-disconnect")
+            raise RuntimeError("Network error while uploading the PDF: ConnectError")
+
+    monkeypatch.setattr(
+        "ruangao_note.services.chapter_ocr.get_settings",
+        lambda: SimpleNamespace(mineru_model_version="vlm"),
+    )
+    try:
+        run = ChapterOCRService(
+            session, storage=storage, parser=InterruptedParser()
+        ).process_chapter(chapter.id)
+
+        assert run.status == "failed"
+        assert run.raw_result["batch_id"] == "batch-created-before-disconnect"
+        assert run.raw_result["state"] == "submitted"
+        assert "ConnectError" in run.error_message
     finally:
         session.close()
         engine.dispose()
