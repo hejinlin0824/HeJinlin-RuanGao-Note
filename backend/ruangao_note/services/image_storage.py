@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from PIL import Image, UnidentifiedImageError
+
 from ruangao_note.core.config import get_settings
 
 
