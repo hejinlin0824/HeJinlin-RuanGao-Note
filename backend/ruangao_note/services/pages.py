@@ -135,6 +135,15 @@ class PageService:
         self.session.commit()
         return page
 
+    def update_rotation(self, chapter_id: str, page_id: str, rotation: int) -> ChapterPage:
+        """Set display rotation metadata without modifying the original image bytes."""
+        if rotation not in {0, 90, 180, 270}:
+            raise ValueError("rotation must be one of 0, 90, 180, or 270.")
+        page = self._get_active_page(chapter_id, page_id)
+        page.rotation = rotation
+        self.session.commit()
+        return page
+
     def archive(self, chapter_id: str, page_id: str) -> None:
         """Soft-delete a page and retain its original image and database record."""
         page = self._get_active_page(chapter_id, page_id)
