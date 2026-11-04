@@ -1,5 +1,10 @@
 """Database and domain-model integration tests."""
 
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine
 from ruangao_note.domain.models import (
@@ -14,10 +19,6 @@ from ruangao_note.domain.models import (
     Section,
     SourceBlock,
 )
-from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 
 def make_session() -> tuple[Session, Engine]:
