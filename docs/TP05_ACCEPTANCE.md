@@ -26,7 +26,17 @@ pytest -v
 - 没有页级布局证据时不猜测页归属。
 - 水印、页眉页脚和脚注检测目前只生成候选，不删除 SourceBlock 或原始 OCR 文本。
 
-## 3. API 验收
+## 3. 前端工作台验收
+
+启动服务后打开：
+
+`http://127.0.0.1:8765/source-review`
+
+在页面选择教材、章节和成功的 OCR 处理记录，点击“生成 / 补全原文块”。页面会显示布局文件选择、块数量、空文本块数量、页码映射数量和清洗候选，并可查看原始教材页及导出锚点 Markdown。普通使用无需操作 Swagger 或手工输入 API。
+
+若此前已经生成过空文本 SourceBlock，再次点击“生成 / 补全原文块”会按原布局顺序修复现有记录，尽量保留 SourceBlock ID 和已有证据关系；不需要重新上传图片或运行 MinerU。
+
+## 4. API 验收
 
 先完成 TP-04：创建教材、章节、上传页面并运行章节 MinerU OCR。取得成功的 `chapter_id` 与 `run_id`。
 
@@ -67,7 +77,7 @@ GET /api/chapters/{chapter_id}/ocr-runs
 
 确认 `normalized_result.artifacts.markdown` 与 `normalized_result.artifacts.json` 仍然存在；`anchored_markdown` 是新增派生内容，不覆盖 MinerU 原始 Markdown。
 
-## 4. 内容质量人工抽查
+## 5. 内容质量人工抽查
 
 建议选取至少 3 页、包含正文/页眉/脚注/表格/公式/图片的真实教材样本，检查：
 
@@ -79,9 +89,10 @@ GET /api/chapters/{chapter_id}/ocr-runs
 6. 从任意 SourceBlock 的 `page_id` 可以访问对应原图。
 7. 对同一 run 重复物化，SourceBlock 数量和 block_key 保持不变。
 
-## 5. 当前限制
+## 6. 当前限制
 
-- 只有 full.md、没有 content_list.json 时，不生成猜测页码的 SourceBlock；报告会明确提示缺少布局数据。
+- 优先解析 `content_list_v2.json`：识别按页分组结构及 `title_content`、`paragraph_content`、`math_content`、脚注等 span 字段；缺少 V2 时回退至 `content_list.json`。
+- 只有 full.md、没有可用 content_list 时，不生成猜测页码的 SourceBlock；报告会明确提示缺少布局数据。
 - bbox 暂按 MinerU 原值保存，不对坐标单位、旋转或归一化做未经验证的转换。
 - 清洗仍是候选标注，尚未实现人工审核 UI、可撤销删除视图、跨 OCR 版本锚点迁移。
 - 图片文件独立持久化、bbox 原图叠加预览与脚注引用关系将在后续阶段继续完善。
