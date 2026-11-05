@@ -434,6 +434,7 @@ def build_source_block_payloads(
             "empty_text_entries": 0,
             "unmapped_entries": 0,
             "cleanup_candidate_count": 0,
+            "alternate_layout_recoveries": [],
             "artifact_diagnostics": diagnostics,
             "warnings": [warning],
         }
