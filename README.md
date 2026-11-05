@@ -13,7 +13,9 @@ TP-01～TP-03 已完成验收。TP-04 已提供 Mock OCR 和 MinerU v4 云端章
 - [TP-03 图片导入本地验收说明](docs/TP03_ACCEPTANCE.md)
 - [TP-04 OCR 本地验收说明](docs/TP04_ACCEPTANCE.md)
 - [TP-05 原文证据块与 Markdown 验收说明](docs/TP05_ACCEPTANCE.md)
+- [TP-06 目录结构识别与人工修正验收说明](docs/TP06_ACCEPTANCE.md)
 - 原文证据与 OCR 清洗工作台：`http://127.0.0.1:8765/source-review`（启动服务后访问）
+- 目录结构识别与修正工作台：`http://127.0.0.1:8765/outline-review`（启动服务后访问）
 
 ## 技术基线
 
@@ -104,6 +106,7 @@ uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port
 - http://127.0.0.1:8765/health/ready
 - http://127.0.0.1:8765/docs
 - http://127.0.0.1:8765/source-review（TP-05 原文证据与 OCR 清洗工作台）
+- http://127.0.0.1:8765/outline-review（TP-06 目录结构识别与修正工作台）
 
 ## 开发约定
 

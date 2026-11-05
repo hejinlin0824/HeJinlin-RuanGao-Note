@@ -90,6 +90,9 @@ class Section(TimestampMixin, Base):
     parent_id: Mapped[str | None] = mapped_column(
         ForeignKey("sections.id", ondelete="RESTRICT")
     )
+    source_block_id: Mapped[str | None] = mapped_column(
+        ForeignKey("source_blocks.id", ondelete="RESTRICT"), index=True
+    )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     section_number: Mapped[str | None] = mapped_column(String(80))
     level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -100,6 +103,7 @@ class Section(TimestampMixin, Base):
         remote_side="Section.id", back_populates="children"
     )
     children: Mapped[list[Section]] = relationship(back_populates="parent")
+    source_block: Mapped[SourceBlock | None] = relationship(back_populates="section")
     knowledge_nodes: Mapped[list[KnowledgeNode]] = relationship(back_populates="section")
 
 
@@ -210,6 +214,7 @@ class SourceBlock(TimestampMixin, Base):
     processing_run: Mapped[ProcessingRun] = relationship(back_populates="source_blocks")
     knowledge_sources: Mapped[list[KnowledgeSource]] = relationship(back_populates="source_block")
     relation_evidence: Mapped[list[RelationEvidence]] = relationship(back_populates="source_block")
+    section: Mapped[Section | None] = relationship(back_populates="source_block")
 
 
 class KnowledgeNode(TimestampMixin, Base):
