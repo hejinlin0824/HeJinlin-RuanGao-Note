@@ -10,27 +10,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("sections") as batch_op:
-        batch_op.add_column(sa.Column("source_block_id", sa.String(length=36), nullable=True))
-        batch_op.create_foreign_key(
-            "fk_sections_source_block_id_source_blocks",
-            "source_blocks",
-            ["source_block_id"],
-            ["id"],
-            ondelete="RESTRICT",
-        )
-        batch_op.create_index(
-            "ix_sections_source_block_id",
-            ["source_block_id"],
-            unique=False,
-        )
+    # SQLite supports ADD COLUMN with a nullable REFERENCES column and NULL default.
+    # Avoid batch table recreation: sections has a self-referencing parent_id FK, and
+    # SQLite/Alembic can report a circular dependency while sorting that table's FKs.
+    op.add_column(
+        "sections",
+        sa.Column(
+            "source_block_id",
+            sa.String(length=36),
+            sa.ForeignKey("source_blocks.id", ondelete="RESTRICT"),
+            nullable=True,
+        ),
+    )
+    op.create_index(
+        "ix_sections_source_block_id",
+        "sections",
+        ["source_block_id"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("sections") as batch_op:
-        batch_op.drop_index("ix_sections_source_block_id")
-        batch_op.drop_constraint(
-            "fk_sections_source_block_id_source_blocks",
-            type_="foreignkey",
-        )
-        batch_op.drop_column("source_block_id")
+    op.drop_index("ix_sections_source_block_id", table_name="sections")
+    op.drop_column("sections", "source_block_id")
