@@ -52,8 +52,11 @@ def test_visual_empty_block_is_distinguished_from_empty_paragraph():
                 [
                     {
                         "type": "image",
-                        "img_path": "images/figure-1.jpg",
-                        "content": {"image_content": [], "image_caption": []},
+                        "content": {
+                            "image_content": [],
+                            "image_caption": [],
+                            "image_source": {"path": "images/figure-1.jpg"},
+                        },
                         "bbox": [0, 498, 55, 662],
                     },
                     {
@@ -156,3 +159,79 @@ def test_empty_block_diagnostics_summarize_unknown_payload_without_copying_text(
         "recognized_text"
     ]
     assert hidden_text not in str(report)
+
+
+
+def test_empty_v2_paragraph_recovers_text_from_unique_exact_v1_match():
+    bbox = [81, 54, 745, 76]
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {"paragraph_content": []},
+                        "bbox": bbox,
+                    }
+                ]
+            ],
+            "chapter_content_list.json": [
+                {
+                    "type": "text",
+                    "page_idx": 0,
+                    "text": "正文来自同一 OCR 的 V1 输出",
+                    "bbox": bbox,
+                }
+            ],
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 1
+    assert blocks[0]["text"] == "正文来自同一 OCR 的 V1 输出"
+    assert report["empty_text_entries"] == 0
+    assert report["alternate_layout_recoveries"] == [
+        {
+            "entry_index": 0,
+            "block_type": "paragraph",
+            "page_idx": 0,
+            "bbox": [81.0, 54.0, 745.0, 76.0],
+            "source_layout": "chapter_content_list.json",
+            "source_entry_index": 0,
+            "match_method": "page_idx+block_type+exact_bbox",
+            "block_key": blocks[0]["block_key"],
+        }
+    ]
+
+
+def test_empty_v2_paragraph_does_not_recover_from_v1_bbox_mismatch():
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {"paragraph_content": []},
+                        "bbox": [81, 54, 745, 76],
+                    }
+                ]
+            ],
+            "chapter_content_list.json": [
+                {
+                    "type": "text",
+                    "page_idx": 0,
+                    "text": "不能错误拼接的其他段落",
+                    "bbox": [81, 80, 745, 102],
+                }
+            ],
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert blocks[0]["text"] == ""
+    assert report["empty_text_entries"] == 1
+    assert report["alternate_layout_recoveries"] == []
