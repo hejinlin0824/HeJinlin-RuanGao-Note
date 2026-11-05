@@ -89,6 +89,7 @@ def _as_text(value: Any) -> str:
         "page_aside_text_content",
         "page_footnote_content",
         "children",
+        "lines",
         "body",
         "caption",
         # Some MinerU V2 exports wrap type-specific content in {"spans": [...]}.
@@ -206,6 +207,267 @@ def _alternate_content_lists(
         if entries:
             alternatives.append((name, entries))
     return alternatives
+
+
+def _model_json_pages(
+    artifacts: dict[str, Any],
+) -> tuple[str | None, list[list[dict[str, Any]]] | None]:
+    """Read page-grouped raw VLM model output without guessing page order."""
+    json_files = artifacts.get("json")
+    if not isinstance(json_files, dict):
+        return None, None
+
+    for name, payload in json_files.items():
+        basename = PurePosixPath(str(name)).name.lower()
+        if basename != "model.json" and not basename.endswith("_model.json"):
+            continue
+        if isinstance(payload, list) and payload and all(
+            isinstance(page, list) for page in payload
+        ):
+            pages = [
+                [item for item in page if isinstance(item, dict)] for page in payload
+            ]
+            return str(name), pages
+        if isinstance(payload, dict):
+            raw_pages = payload.get("pages") or payload.get("page_groups")
+            if isinstance(raw_pages, list):
+                pages = []
+                for page in raw_pages:
+                    if isinstance(page, list):
+                        pages.append([item for item in page if isinstance(item, dict)])
+                    elif isinstance(page, dict):
+                        blocks = page.get("blocks") or page.get("items") or []
+                        pages.append(
+                            [item for item in blocks if isinstance(item, dict)]
+                            if isinstance(blocks, list)
+                            else []
+                        )
+                    else:
+                        pages.append([])
+                return str(name), pages
+    return None, None
+
+
+def _model_bbox_in_content_units(
+    value: Any,
+) -> tuple[list[float] | None, str | None]:
+    """Convert VLM normalized page coordinates to Content List's 0-1000 space."""
+    bbox = _bbox(value)
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        return None, None
+    maximum = max(abs(part) for part in bbox)
+    if maximum <= 1.5:
+        return [part * 1000.0 for part in bbox], "normalized_0_1_to_0_1000"
+    if maximum <= 1000:
+        return bbox, "already_0_1000"
+    # Pixel coordinates require page dimensions and are deliberately not guessed.
+    return None, "unsupported_pixel_coordinates"
+
+
+def _bbox_overlap(
+    first: list[float], second: list[float]
+) -> tuple[float, float, float]:
+    """Return IoU, first-box coverage, and second-box coverage."""
+    ax0, ay0, ax1, ay1 = first
+    bx0, by0, bx1, by1 = second
+    first_area = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    second_area = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    if first_area <= 0 or second_area <= 0:
+        return 0.0, 0.0, 0.0
+    width = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+    height = max(0.0, min(ay1, by1) - max(ay0, by0))
+    intersection = width * height
+    union = first_area + second_area - intersection
+    return (
+        intersection / union if union else 0.0,
+        intersection / first_area,
+        intersection / second_area,
+    )
+
+
+def _recover_text_from_model_json(
+    artifacts: dict[str, Any],
+    page_idx: int,
+    target_bbox: list[float] | dict[str, float] | None,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any]]:
+    """Recover an empty paragraph only from text blocks spatially matching its page box."""
+    model_file, pages = _model_json_pages(artifacts)
+    diagnostic: dict[str, Any] = {
+        "source_file": model_file,
+        "page_idx": page_idx,
+        "recovered": False,
+    }
+    if pages is None:
+        diagnostic["reason"] = "model_json_page_groups_not_found"
+        return "", None, diagnostic
+    diagnostic["page_group_count"] = len(pages)
+    if page_idx < 0 or page_idx >= len(pages):
+        diagnostic["reason"] = "page_idx_out_of_model_json_range"
+        return "", None, diagnostic
+
+    page_entries = pages[page_idx]
+    diagnostic["page_block_count"] = len(page_entries)
+    normalized_target = _bbox(target_bbox)
+    if not isinstance(normalized_target, list) or len(normalized_target) != 4:
+        diagnostic["reason"] = "target_bbox_unavailable"
+        return "", None, diagnostic
+
+    candidates: list[dict[str, Any]] = []
+    unsupported_bbox_count = 0
+    for entry_index, item in enumerate(page_entries):
+        raw_type = str(item.get("type") or item.get("label") or "").lower()
+        # A paragraph can only be recovered from raw text blocks, never titles,
+        # captions, headers, or arbitrary nearby layout detections.
+        if raw_type not in {"text", "paragraph"}:
+            continue
+        content = item.get("content", item.get("text"))
+        text = _as_text(content)
+        if not text:
+            continue
+        bbox, coordinate_unit = _model_bbox_in_content_units(item.get("bbox"))
+        if bbox is None:
+            unsupported_bbox_count += 1
+            continue
+        iou, target_coverage, candidate_coverage = _bbox_overlap(
+            normalized_target, bbox
+        )
+        candidates.append(
+            {
+                "entry_index": entry_index,
+                "text": text,
+                "bbox": bbox,
+                "coordinate_unit": coordinate_unit,
+                "iou": iou,
+                "target_coverage": target_coverage,
+                "candidate_coverage": candidate_coverage,
+            }
+        )
+
+    diagnostic["text_candidate_count"] = sum(
+        1
+        for item in page_entries
+        if str(item.get("type") or item.get("label") or "").lower()
+        in {"text", "paragraph"}
+        and _as_text(item.get("content", item.get("text")))
+    )
+    diagnostic["text_candidates_with_usable_bbox"] = len(candidates)
+    diagnostic["unsupported_bbox_count"] = unsupported_bbox_count
+    diagnostic["nearest_candidates"] = [
+        {
+            "entry_index": item["entry_index"],
+            "bbox": [round(value, 3) for value in item["bbox"]],
+            "iou": round(item["iou"], 4),
+            "target_coverage": round(item["target_coverage"], 4),
+            "candidate_coverage": round(item["candidate_coverage"], 4),
+        }
+        for item in sorted(candidates, key=lambda candidate: candidate["iou"], reverse=True)[:5]
+    ]
+    if not candidates:
+        diagnostic["reason"] = "no_text_candidates_with_usable_bbox"
+        return "", None, diagnostic
+
+    exact = [
+        item
+        for item in candidates
+        if all(
+            abs(left - right) <= 1.0
+            for left, right in zip(item["bbox"], normalized_target, strict=True)
+        )
+    ]
+    selected: list[dict[str, Any]] = []
+    match_method = ""
+    if len(exact) == 1:
+        selected = exact
+        match_method = "model_json_page+normalized_bbox_exact"
+    elif len(exact) > 1:
+        diagnostic["reason"] = "multiple_exact_model_json_matches"
+        return "", None, diagnostic
+    else:
+        high_overlap = [
+            item
+            for item in candidates
+            if item["iou"] >= 0.90
+            and item["target_coverage"] >= 0.90
+            and item["candidate_coverage"] >= 0.90
+        ]
+        if len(high_overlap) == 1:
+            selected = high_overlap
+            match_method = "model_json_page+bbox_iou"
+        elif len(high_overlap) > 1:
+            diagnostic["reason"] = "multiple_high_overlap_model_json_matches"
+            return "", None, diagnostic
+        else:
+            # A paragraph may be split into multiple raw text blocks. Accept those
+            # only when every candidate is contained by the target and their union
+            # bbox closely reconstructs the target region.
+            contained = [
+                item
+                for item in candidates
+                if item["bbox"][0] >= normalized_target[0] - 2.0
+                and item["bbox"][1] >= normalized_target[1] - 2.0
+                and item["bbox"][2] <= normalized_target[2] + 2.0
+                and item["bbox"][3] <= normalized_target[3] + 2.0
+            ]
+            if len(contained) >= 2:
+                union_bbox = [
+                    min(item["bbox"][0] for item in contained),
+                    min(item["bbox"][1] for item in contained),
+                    max(item["bbox"][2] for item in contained),
+                    max(item["bbox"][3] for item in contained),
+                ]
+                union_iou, target_coverage, _ = _bbox_overlap(
+                    normalized_target, union_bbox
+                )
+                has_overlapping_fragments = any(
+                    _bbox_overlap(first["bbox"], second["bbox"])[0] > 0.25
+                    for index, first in enumerate(contained)
+                    for second in contained[index + 1 :]
+                )
+                if (
+                    union_iou >= 0.90
+                    and target_coverage >= 0.90
+                    and not has_overlapping_fragments
+                ):
+                    selected = contained
+                    match_method = "model_json_contained_text_fragments"
+                else:
+                    diagnostic["reason"] = "model_json_fragments_do_not_cover_target"
+            else:
+                diagnostic["reason"] = "no_unique_spatial_model_json_match"
+            if not selected:
+                return "", None, diagnostic
+
+    selected.sort(
+        key=lambda item: (
+            (item["bbox"][1] + item["bbox"][3]) / 2,
+            item["bbox"][0],
+            item["entry_index"],
+        )
+    )
+    centers = [
+        (item["bbox"][1] + item["bbox"][3]) / 2 for item in selected
+    ]
+    max_height = max(item["bbox"][3] - item["bbox"][1] for item in selected)
+    separator = " " if max(centers) - min(centers) <= max(1.0, max_height * 0.5) else "\n"
+    recovered_text = separator.join(item["text"].strip() for item in selected).strip()
+    if not recovered_text:
+        diagnostic["reason"] = "matched_model_json_blocks_have_no_renderable_text"
+        return "", None, diagnostic
+
+    recovery = {
+        "source_file": model_file,
+        "source_entry_indices": [item["entry_index"] for item in selected],
+        "source_bboxes_0_1000": [
+            [round(value, 3) for value in item["bbox"]] for item in selected
+        ],
+        "coordinate_transform": selected[0]["coordinate_unit"],
+        "match_method": match_method,
+        "page_idx": page_idx,
+        "target_bbox": normalized_target,
+        "recovered": True,
+    }
+    return recovered_text, recovery, diagnostic
+
 
 
 def _content_list(artifacts: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
@@ -463,8 +725,9 @@ def build_source_block_payloads(
         block_type = _kind(item)
         text = _block_text(item, block_type)
         recovery_diagnostic = None
+        model_recovery_diagnostic = None
+        target_bbox = _bbox(item.get("bbox"))
         if not text and alternate_layouts:
-            target_bbox = _bbox(item.get("bbox"))
             matches = []
             for alternate_name, alternate_entries in alternate_layouts:
                 for alternate_index, alternate_item in enumerate(alternate_entries):
@@ -491,6 +754,13 @@ def build_source_block_payloads(
                     "source_entry_index": alternate_index,
                     "match_method": "page_idx+block_type+exact_bbox",
                 }
+        if not text and block_type == "paragraph":
+            recovered_text, model_recovery, model_probe = _recover_text_from_model_json(
+                artifacts, page_idx, target_bbox
+            )
+            model_recovery_diagnostic = model_recovery or model_probe
+            if recovered_text:
+                text = recovered_text
         canonical = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         text_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -510,6 +780,8 @@ def build_source_block_payloads(
         }
         if recovery_diagnostic is not None:
             payload["recovery_diagnostic"] = recovery_diagnostic
+        if model_recovery_diagnostic is not None:
+            payload["model_json_recovery_diagnostic"] = model_recovery_diagnostic
         if not text:
             content = item.get("content")
             content_keys = (
@@ -557,6 +829,8 @@ def build_source_block_payloads(
     candidates = []
     empty_block_diagnostics = []
     alternate_layout_recoveries = []
+    model_json_recoveries = []
+    model_json_recovery_diagnostics = []
     for order, payload in enumerate(payloads):
         base = payload.pop("block_key_base")
         occurrence_counts[base] += 1
@@ -570,6 +844,13 @@ def build_source_block_payloads(
                     "block_key": payload["block_key"],
                 }
             )
+        model_diagnostic = payload.pop("model_json_recovery_diagnostic", None)
+        if model_diagnostic is not None:
+            collection = (
+                model_json_recoveries if model_diagnostic.get("recovered")
+                else model_json_recovery_diagnostics
+            )
+            collection.append({**model_diagnostic, "block_key": payload["block_key"]})
         empty_diagnostic = payload.pop("empty_diagnostic", None)
         if empty_diagnostic is not None:
             empty_block_diagnostics.append(
@@ -625,6 +906,8 @@ def build_source_block_payloads(
         "unexpected_empty_text_entries": unexpected_empty_count,
         "empty_block_diagnostics": empty_block_diagnostics,
         "alternate_layout_recoveries": alternate_layout_recoveries,
+        "model_json_recoveries": model_json_recoveries,
+        "model_json_recovery_diagnostics": model_json_recovery_diagnostics,
         "unmapped_entries": unmapped,
         "cleanup_candidate_count": len(candidates),
         "cleanup_candidates": candidates,

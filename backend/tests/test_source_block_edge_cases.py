@@ -235,3 +235,121 @@ def test_empty_v2_paragraph_does_not_recover_from_v1_bbox_mismatch():
     assert blocks[0]["text"] == ""
     assert report["empty_text_entries"] == 1
     assert report["alternate_layout_recoveries"] == []
+
+
+
+def test_empty_v2_paragraph_recovers_from_vlm_model_json_normalized_bbox():
+    bbox = [81, 54, 745, 76]
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {"paragraph_content": []},
+                        "bbox": bbox,
+                    }
+                ]
+            ],
+            "chapter_model.json": [
+                [
+                    {
+                        "type": "text",
+                        "bbox": [0.081, 0.054, 0.745, 0.076],
+                        "content": "正文来自同一页的 MinerU 原始模型输出",
+                    }
+                ]
+            ],
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert blocks[0]["text"] == "正文来自同一页的 MinerU 原始模型输出"
+    assert report["empty_text_entries"] == 0
+    assert report["model_json_recoveries"][0]["source_file"] == "chapter_model.json"
+    assert report["model_json_recoveries"][0]["source_entry_indices"] == [0]
+    assert report["model_json_recoveries"][0]["coordinate_transform"] == (
+        "normalized_0_1_to_0_1000"
+    )
+    assert report["model_json_recoveries"][0]["match_method"] == (
+        "model_json_page+normalized_bbox_exact"
+    )
+
+
+def test_model_json_recovery_rejects_a_nearby_but_nonmatching_text_block():
+    bbox = [81, 54, 745, 76]
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {"paragraph_content": []},
+                        "bbox": bbox,
+                    }
+                ]
+            ],
+            "chapter_model.json": [
+                [
+                    {
+                        "type": "text",
+                        "bbox": [0.081, 0.08, 0.745, 0.102],
+                        "content": "这是下方相邻段落，不能被错误回填",
+                    }
+                ]
+            ],
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert blocks[0]["text"] == ""
+    assert report["empty_text_entries"] == 1
+    assert report["model_json_recoveries"] == []
+    diagnostic = report["model_json_recovery_diagnostics"][0]
+    assert diagnostic["reason"] == "no_unique_spatial_model_json_match"
+    assert diagnostic["nearest_candidates"][0]["iou"] == 0.0
+
+
+def test_model_json_recovery_combines_nonoverlapping_text_fragments_inside_bbox():
+    bbox = [81, 54, 745, 76]
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "paragraph",
+                        "content": {"paragraph_content": []},
+                        "bbox": bbox,
+                    }
+                ]
+            ],
+            "chapter_model.json": [
+                [
+                    {
+                        "type": "text",
+                        "bbox": [0.081, 0.054, 0.40, 0.076],
+                        "content": "由同一段落拆分出的前半句",
+                    },
+                    {
+                        "type": "text",
+                        "bbox": [0.405, 0.054, 0.745, 0.076],
+                        "content": "以及后半句",
+                    },
+                ]
+            ],
+        }
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert blocks[0]["text"] == "由同一段落拆分出的前半句 以及后半句"
+    assert report["empty_text_entries"] == 0
+    assert report["model_json_recoveries"][0]["source_entry_indices"] == [0, 1]
+    assert report["model_json_recoveries"][0]["match_method"] == (
+        "model_json_contained_text_fragments"
+    )
