@@ -298,17 +298,34 @@ class MinerUCloudParser:
 
     @staticmethod
     def _read_result_zip(content: bytes) -> dict[str, Any]:
+        """Read text/layout artifacts and bounded raster assets from a MinerU ZIP."""
         try:
             archive = zipfile.ZipFile(io.BytesIO(content))
         except zipfile.BadZipFile as exc:
             raise MinerUError("MinerU returned an invalid ZIP archive.") from exc
 
-        artifacts: dict[str, Any] = {"markdown": {}, "json": {}, "files": []}
+        max_asset_file_bytes = 20 * 1024 * 1024
+        max_asset_total_bytes = 200 * 1024 * 1024
+        image_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"}
+        artifacts: dict[str, Any] = {
+            "markdown": {},
+            "json": {},
+            "files": [],
+            "asset_bytes": {},
+            "asset_diagnostics": {
+                "archive_image_count": 0,
+                "extracted_image_count": 0,
+                "skipped_images": [],
+                "extracted_bytes": 0,
+            },
+        }
         with archive:
-            total_uncompressed = sum(info.file_size for info in archive.infolist())
+            infos = archive.infolist()
+            total_uncompressed = sum(info.file_size for info in infos)
             if total_uncompressed > 1024 * 1024 * 1024:
                 raise MinerUError("MinerU ZIP exceeds the 1 GiB extraction limit.")
-            for info in archive.infolist():
+            extracted_asset_bytes = 0
+            for info in infos:
                 if info.is_dir():
                     continue
                 name = info.filename
@@ -322,19 +339,56 @@ class MinerUCloudParser:
                     or is_symlink
                 ):
                     raise MinerUError("MinerU ZIP contains an unsafe file path.")
-                raw = archive.read(info)
+
                 artifacts["files"].append(name)
                 suffix = path.suffix.lower()
+                if suffix not in {".md", ".json"} | image_suffixes:
+                    continue
+
+                if suffix in image_suffixes:
+                    diagnostics = artifacts["asset_diagnostics"]
+                    diagnostics["archive_image_count"] += 1
+                    if info.file_size > max_asset_file_bytes:
+                        diagnostics["skipped_images"].append(
+                            {
+                                "source_path": name,
+                                "reason": "image_exceeds_per_file_limit",
+                                "byte_size": info.file_size,
+                            }
+                        )
+                        continue
+                    if extracted_asset_bytes + info.file_size > max_asset_total_bytes:
+                        diagnostics["skipped_images"].append(
+                            {
+                                "source_path": name,
+                                "reason": "images_exceed_total_extraction_limit",
+                                "byte_size": info.file_size,
+                            }
+                        )
+                        continue
+                    raw = archive.read(info)
+                    artifacts["asset_bytes"][name] = raw
+                    extracted_asset_bytes += len(raw)
+                    diagnostics["extracted_image_count"] += 1
+                    diagnostics["extracted_bytes"] += len(raw)
+                    continue
+
+                raw = archive.read(info)
                 if suffix == ".md":
-                    artifacts["markdown"][name] = raw.decode("utf-8-sig", errors="replace")
+                    artifacts["markdown"][name] = raw.decode(
+                        "utf-8-sig", errors="replace"
+                    )
                 elif suffix == ".json":
                     try:
-                        artifacts["json"][name] = json.loads(raw.decode("utf-8-sig"))
+                        artifacts["json"][name] = json.loads(
+                            raw.decode("utf-8-sig")
+                        )
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         artifacts["json"][name] = {
                             "decode_error": True,
                             "text": raw.decode("utf-8", errors="replace"),
                         }
+
         if not artifacts["markdown"] and not artifacts["json"]:
             raise MinerUError("MinerU ZIP contains neither Markdown nor JSON results.")
         return artifacts

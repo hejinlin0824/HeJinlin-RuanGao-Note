@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-TP-01～TP-03 已完成验收。TP-04 已提供 Mock OCR 和 MinerU v4 云端章节批量解析入口；TP-05 已建立可追溯的页级原文证据与锚点 Markdown；TP-06 已实现基于标题证据的目录识别、人工修正和审计记录，GitHub CI 通过，当前待 Windows 浏览器验收。TP-05 的真实教材 model.json 回补仍待复验，图片资源独立持久化尚未完成。所有正式知识、关系和题目必须能回溯到教材原文来源块。
+TP-01～TP-03 已完成验收。TP-04 已提供 Mock OCR 和 MinerU v4 云端章节批量解析入口；TP-05 已建立可追溯的页级原文证据与锚点 Markdown；用户提供的 4 页真实教材报告显示 42/42 布局映射、0 异常空文本，model.json 成功恢复段落。图片资源持久化与现有 MinerU batch 恢复入口已进入实现，待本轮 CI 和 Windows 预览验收。TP-06 已实现基于标题证据的目录识别、人工修正和审计记录，GitHub CI 通过，当前待 Windows 浏览器验收。所有正式知识、关系和题目必须能回溯到教材原文来源块。
 
 ## 文档
 
@@ -84,7 +84,9 @@ OCR 处理 API（TP-04）：
 - Token 只从项目根目录本地 `.env` 的 `MINERU_TOKEN` 读取。运行 `.\scripts\configure_mineru.ps1` 可隐藏输入并保存，不需要把 Token 发到聊天或提交 Git。
 - `.env` 已在 `.gitignore` 中排除；`.env.example` 只包含空变量。
 - 章节 PDF 是临时内存产物，按页面顺序构建；原始图片不会被修改。
-- MinerU 的原始 Markdown/JSON 解析产物保存在章节级 ProcessingRun；TP-05 已开始从 `content_list.json` 生成按页关联的 SourceBlock 和带锚点 Markdown，并标记疑似水印、脚注及跨页重复短文本。清洗仅生成审核候选，不会静默删除原文。
+- MinerU 的原始 Markdown/JSON 解析产物保存在章节级 ProcessingRun；TP-05 从 `content_list_v2.json` 优先生成按页关联的 SourceBlock 和带锚点 Markdown，并标记疑似水印、脚注及跨页重复短文本。清洗仅生成审核候选，不会静默删除原文。
+- MinerU ZIP 内 JPG/JPEG/PNG/WEBP/TIFF 图片资源会在格式与像素校验后按 SHA-256 独立保存到 `STORAGE_DIR/books/{book}/{chapter}/ocr/{run}/assets`；二进制不写入数据库 JSON。
+- 对此前已成功的 MinerU run，可在 `/source-review` 点击“从已有 MinerU 任务恢复图片资源（不重跑 OCR）”；通过原 batch_id 重新下载 ZIP，不重新上传章节 PDF。
 
 数据库初始化和检查：
 

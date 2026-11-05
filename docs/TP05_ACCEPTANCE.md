@@ -32,7 +32,7 @@ pytest -v
 
 `http://127.0.0.1:8765/source-review`
 
-在页面选择教材、章节和成功的 OCR 处理记录，点击“生成 / 补全原文块”。页面会显示布局文件选择、块数量、空文本块数量、页码映射数量和清洗候选，并可查看原始教材页及导出锚点 Markdown。普通使用无需操作 Swagger 或手工输入 API。
+在页面选择教材、章节和成功的 OCR 处理记录，点击“生成 / 补全原文块”。页面会显示布局文件选择、块数量、空文本块数量、页码映射数量和清洗候选，并可查看原始教材页及导出锚点 Markdown。若报告提示图片资源尚未持久化，点击“从已有 MinerU 任务恢复图片资源（不重跑 OCR）”；系统使用已保存的 batch_id 下载原结果 ZIP，不会重新提交章节 PDF。普通使用无需操作 Swagger 或手工输入 API。
 
 若此前已经生成过空文本 SourceBlock，再次点击“生成 / 补全原文块”会按原布局顺序修复现有记录，尽量保留 SourceBlock ID 和已有证据关系；不需要重新上传图片或运行 MinerU。
 
@@ -89,10 +89,18 @@ GET /api/chapters/{chapter_id}/ocr-runs
 6. 从任意 SourceBlock 的 `page_id` 可以访问对应原图。
 7. 对同一 run 重复物化，SourceBlock 数量和 block_key 保持不变。
 
-## 6. 当前限制
+## 6. MinerU 图片资源持久化
+
+- ZIP 解压除 Markdown/JSON 外，也会提取 JPG/JPEG/PNG/WEBP/TIFF 图片；单文件上限 20 MiB、累计提取上限 200 MiB，整个 ZIP 解压总量仍受 1 GiB 限制。
+- 图片字节先经 Pillow 格式/像素校验，再写入 `STORAGE_DIR/books/{book}/{chapter}/ocr/{run}/assets/`；磁盘文件名由 SHA-256 生成，不直接使用 ZIP 内路径。
+- `SourceBlock.media_path` 保存 content_list 中的原始资源路径；ProcessingRun artifact 元数据记录存储路径、SHA-256、MIME、大小和图片尺寸。二进制不写入 SQLite JSON。
+- 已有成功 OCR run 可使用工作台恢复按钮，从原 MinerU batch 再下载 ZIP；不重跑 OCR、不重新上传 PDF。若 MinerU 已过期或不再提供 ZIP，则恢复会返回明确错误，届时只能创建新的 OCR run。
+- 工作台会并列显示教材原始整页和 MinerU 提取的图片资源。bbox 精确叠加、旋转坐标转换、SVG 等矢量资源仍不在本阶段范围内。
+
+## 7. 当前限制
 
 - 优先解析 `content_list_v2.json`：识别按页分组结构及 `title_content`、`paragraph_content`、`math_content`、脚注等 span 字段；缺少 V2 时回退至 `content_list.json`。
 - 只有 full.md、没有可用 content_list 时，不生成猜测页码的 SourceBlock；报告会明确提示缺少布局数据。
 - bbox 暂按 MinerU 原值保存，不对坐标单位、旋转或归一化做未经验证的转换。
 - 清洗仍是候选标注，尚未实现人工审核 UI、可撤销删除视图、跨 OCR 版本锚点迁移。
-- 图片文件独立持久化、bbox 原图叠加预览与脚注引用关系将在后续阶段继续完善。
+- bbox 到教材整页的精确叠加、旋转坐标转换和脚注引用关系将在后续阶段继续完善。

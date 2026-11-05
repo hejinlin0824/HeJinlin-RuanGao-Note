@@ -1,6 +1,7 @@
 """OCR execution and processing-run history endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,8 @@ from ruangao_note.services.chapter_ocr import (
     ChapterOCRResumeConflictError,
     ChapterOCRService,
 )
+from ruangao_note.services.image_storage import ImageStorage
+from ruangao_note.services.mineru_cloud import MinerUError
 from ruangao_note.services.ocr import OCRPageNotFoundError, OCRService
 from ruangao_note.services.source_blocks import (
     materialize_source_blocks,
@@ -43,7 +46,31 @@ def _run_payload(run: ProcessingRun) -> dict[str, object]:
 
 
 
-def _source_block_payload(block: SourceBlock) -> dict[str, object]:
+def _source_block_payload(
+    block: SourceBlock, run: ProcessingRun | None = None
+) -> dict[str, object]:
+    assets = (
+        ((run.normalized_result or {}).get("artifacts") or {}).get("assets", [])
+        if run is not None and isinstance(run.normalized_result, dict)
+        else []
+    )
+    asset = next(
+        (
+            item
+            for item in assets
+            if isinstance(item, dict)
+            and item.get("source_path") == block.media_path
+            and item.get("storage_path")
+            and item.get("sha256")
+        ),
+        None,
+    ) if block.media_path and isinstance(assets, list) else None
+    media_url = (
+        f"/api/chapters/{block.chapter_id}/ocr-runs/{block.processing_run_id}/"
+        f"assets/{asset['sha256']}"
+        if asset
+        else None
+    )
     return {
         "id": block.id,
         "chapter_id": block.chapter_id,
@@ -55,6 +82,9 @@ def _source_block_payload(block: SourceBlock) -> dict[str, object]:
         "bbox": block.bbox,
         "confidence": block.confidence,
         "content_hash": block.content_hash,
+        "media_path": block.media_path,
+        "media_url": media_url,
+        "media_asset": asset,
         "version": block.version,
         "sort_order": block.sort_order,
         "is_active": block.is_active,
@@ -92,7 +122,7 @@ def create_chapter_source_blocks(
         "run_id": run.id,
         "count": len(blocks),
         "report": report,
-        "items": [_source_block_payload(block) for block in blocks],
+        "items": [_source_block_payload(block, run) for block in blocks],
         "anchored_markdown": (run.normalized_result or {}).get("anchored_markdown", ""),
     }
 
@@ -119,7 +149,76 @@ def list_chapter_source_blocks(
         )
         .order_by(SourceBlock.sort_order, SourceBlock.id)
     ).all()
-    return [_source_block_payload(block) for block in blocks]
+    run = session.get(ProcessingRun, run_id)
+    return [_source_block_payload(block, run) for block in blocks]
+
+
+@router.get(
+    "/chapters/{chapter_id}/ocr-runs/{run_id}/assets/{asset_sha256}"
+)
+def get_chapter_ocr_asset(
+    chapter_id: str,
+    run_id: str,
+    asset_sha256: str,
+    session: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve a validated, persisted MinerU media asset belonging to this OCR run."""
+    run = session.scalar(
+        select(ProcessingRun).where(
+            ProcessingRun.id == run_id,
+            ProcessingRun.chapter_id == chapter_id,
+            ProcessingRun.task_type == "chapter_ocr",
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="OCR run not found in this chapter.")
+    normalized = run.normalized_result if isinstance(run.normalized_result, dict) else {}
+    artifacts = normalized.get("artifacts")
+    assets = artifacts.get("assets", []) if isinstance(artifacts, dict) else []
+    asset = next(
+        (
+            item for item in assets
+            if isinstance(item, dict) and item.get("sha256") == asset_sha256
+        ),
+        None,
+    ) if isinstance(assets, list) else None
+    if asset is None:
+        raise HTTPException(status_code=404, detail="MinerU media asset not found.")
+    try:
+        path = ImageStorage().resolve(str(asset["storage_path"]))
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid stored media path.") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Stored MinerU media asset is missing.")
+    return FileResponse(
+        path,
+        media_type=str(asset.get("mime_type") or "application/octet-stream"),
+        filename=f"mineru-{asset_sha256[:16]}{path.suffix}",
+    )
+
+
+@router.post("/chapters/{chapter_id}/ocr-runs/{run_id}/assets/restore")
+def restore_chapter_ocr_assets(
+    chapter_id: str,
+    run_id: str,
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Restore ZIP media from the saved MinerU batch; the PDF is not resubmitted."""
+    settings = get_settings()
+    if not settings.mineru_token.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="MinerU token is not configured. Set MINERU_TOKEN in the local .env file.",
+        )
+    try:
+        run = ChapterOCRService(session).restore_media_assets(chapter_id, run_id)
+    except ChapterOCRNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChapterOCRResumeConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MinerUError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _run_payload(run)
 
 
 @router.post("/chapters/{chapter_id}/ocr")

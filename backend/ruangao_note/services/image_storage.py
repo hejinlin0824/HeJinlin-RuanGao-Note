@@ -102,6 +102,82 @@ class ImageStorage:
             height=height,
         )
 
+    def save_mineru_assets(
+        self,
+        assets: dict[str, bytes],
+        *,
+        book_id: str,
+        chapter_id: str,
+        run_id: str,
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        """Validate and atomically persist raster media extracted from a MinerU ZIP.
+
+        Archive member names are metadata only; on-disk filenames are generated from
+        the content digest and validated image format. No ZIP path is joined to root.
+        """
+        saved: list[dict[str, object]] = []
+        skipped: list[dict[str, str]] = []
+        relative_dir = (
+            Path("books") / str(book_id) / str(chapter_id)
+            / "ocr" / str(run_id) / "assets"
+        )
+        target_dir = (self.root / relative_dir).resolve()
+        if not target_dir.is_relative_to(self.root):
+            raise ValueError("Resolved MinerU asset directory escapes storage root.")
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for source_path, content in sorted(assets.items()):
+            try:
+                mime_type, width, height, extension = self.validate(content)
+            except InvalidImageError as exc:
+                skipped.append(
+                    {"source_path": str(source_path), "reason": str(exc)}
+                )
+                continue
+
+            digest = hashlib.sha256(content).hexdigest()
+            filename = f"{digest}{extension}"
+            target = (target_dir / filename).resolve()
+            if not target.is_relative_to(self.root):
+                raise ValueError("Resolved MinerU asset path escapes storage root.")
+            if not target.exists():
+                temporary_path: Path | None = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb",
+                        dir=target_dir,
+                        prefix=".mineru-",
+                        suffix=".tmp",
+                        delete=False,
+                    ) as temporary:
+                        temporary.write(content)
+                        temporary.flush()
+                        os.fsync(temporary.fileno())
+                        temporary_path = Path(temporary.name)
+                    os.replace(temporary_path, target)
+                except Exception:
+                    if temporary_path is not None:
+                        temporary_path.unlink(missing_ok=True)
+                    raise
+
+            saved.append(
+                {
+                    "source_path": str(source_path),
+                    "storage_path": (relative_dir / filename).as_posix(),
+                    "sha256": digest,
+                    "mime_type": mime_type,
+                    "byte_size": len(content),
+                    "width": width,
+                    "height": height,
+                }
+            )
+
+        return saved, {
+            "stored_count": len(saved),
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+        }
+
     def resolve(self, storage_path: str) -> Path:
         """Resolve a database relative path and reject traversal outside storage root."""
         candidate = (self.root / storage_path).resolve()

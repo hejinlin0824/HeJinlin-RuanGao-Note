@@ -556,6 +556,36 @@ def _kind(item: dict[str, Any]) -> str:
     return aliases.get(value, "unknown")
 
 
+def _media_source_path(item: dict[str, Any]) -> str | None:
+    """Return a safe-to-match archive member path from MinerU layout metadata."""
+    content = item.get("content")
+    candidates = [
+        item.get("img_path"),
+        item.get("image_path"),
+        item.get("path"),
+    ]
+    if isinstance(content, dict):
+        candidates.extend(
+            [
+                content.get("img_path"),
+                content.get("image_path"),
+            ]
+        )
+        for key in ("image_source", "chart_source"):
+            source = content.get(key)
+            if isinstance(source, dict):
+                candidates.append(source.get("path"))
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        value = candidate.strip().replace("\\", "/")
+        path = PurePosixPath(value)
+        if path.is_absolute() or ".." in path.parts or (path.parts and ":" in path.parts[0]):
+            continue
+        return path.as_posix()
+    return None
+
+
 def _block_text(item: dict[str, Any], block_type: str) -> str:
     """Extract V1 direct fields or V2 type-specific structured content."""
     content = item.get("content")
@@ -774,6 +804,7 @@ def build_source_block_payloads(
             "bbox": _bbox(item.get("bbox")),
             "confidence": None,
             "content_hash": text_digest,
+            "media_path": _media_source_path(item),
             "source_digest": digest,
             "entry_index": entry_index,
             "block_key_base": occurrence_key,
@@ -789,12 +820,7 @@ def build_source_block_payloads(
                 if isinstance(content, dict)
                 else []
             )
-            media_path = item.get("img_path") or item.get("image_path")
-            if not media_path and isinstance(content, dict):
-                media_path = content.get("img_path") or content.get("image_path")
-                image_source = content.get("image_source")
-                if not media_path and isinstance(image_source, dict):
-                    media_path = image_source.get("path")
+            media_path = payload["media_path"]
             payload["empty_diagnostic"] = {
                 "entry_index": entry_index,
                 "raw_type": str(
@@ -877,6 +903,35 @@ def build_source_block_payloads(
             )
 
     mapped_count = len(payloads)
+    media_payloads = [payload for payload in payloads if payload.get("media_path")]
+    stored_assets = artifacts.get("assets")
+    stored_assets = stored_assets if isinstance(stored_assets, list) else []
+    stored_asset_paths = {
+        str(asset.get("source_path"))
+        for asset in stored_assets
+        if isinstance(asset, dict) and asset.get("source_path")
+    }
+    matched_media = [
+        payload for payload in media_payloads
+        if payload["media_path"] in stored_asset_paths
+    ]
+    missing_media = [
+        payload for payload in media_payloads
+        if payload["media_path"] not in stored_asset_paths
+    ]
+    media_asset_report = {
+        "media_blocks_with_path": len(media_payloads),
+        "persisted_assets": len(stored_assets),
+        "matched_media_blocks": len(matched_media),
+        "missing_media_blocks": [
+            {
+                "block_key": payload["block_key"],
+                "media_path": payload["media_path"],
+                "page_id": payload["page_id"],
+            }
+            for payload in missing_media
+        ],
+    }
     empty_text_count = sum(not payload["text"] for payload in payloads)
     visual_only_empty_count = sum(
         1 for item in empty_block_diagnostics if item["visual_only"]
@@ -895,6 +950,11 @@ def build_source_block_payloads(
             f"{unexpected_empty_count} non-visual layout blocks contain no extractable text. "
             "Inspect empty_block_diagnostics before treating them as valid."
         )
+    if missing_media:
+        warnings.append(
+            f"{len(missing_media)} visual blocks reference MinerU media files that are "
+            "not yet persisted. Use the existing-batch media restore action when available."
+        )
     return payloads, {
         "layout_source": selected_layout_file or "content_list",
         "layout_entry_count": len(entries),
@@ -905,6 +965,7 @@ def build_source_block_payloads(
         "visual_only_empty_entries": visual_only_empty_count,
         "unexpected_empty_text_entries": unexpected_empty_count,
         "empty_block_diagnostics": empty_block_diagnostics,
+        "media_asset_report": media_asset_report,
         "alternate_layout_recoveries": alternate_layout_recoveries,
         "model_json_recoveries": model_json_recoveries,
         "model_json_recovery_diagnostics": model_json_recovery_diagnostics,
@@ -978,6 +1039,7 @@ def materialize_source_blocks(
                 or block.block_type != payload["block_type"]
                 or block.page_id != payload["page_id"]
                 or block.content_hash != payload["content_hash"]
+                or block.media_path != payload.get("media_path")
             )
             block.chapter_id = run.chapter_id
             block.page_id = payload["page_id"]
@@ -986,6 +1048,7 @@ def materialize_source_blocks(
             block.bbox = payload["bbox"]
             block.confidence = payload["confidence"]
             block.content_hash = payload["content_hash"]
+            block.media_path = payload.get("media_path")
             block.block_key = payload["block_key"]
             block.sort_order = payload["sort_order"]
             block.is_active = True
@@ -1002,6 +1065,7 @@ def materialize_source_blocks(
                 bbox=payload["bbox"],
                 confidence=payload["confidence"],
                 content_hash=payload["content_hash"],
+                media_path=payload.get("media_path"),
                 version=1,
                 sort_order=payload["sort_order"],
                 is_active=True,

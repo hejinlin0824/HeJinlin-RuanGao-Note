@@ -108,6 +108,53 @@ class ChapterOCRService:
         self.storage = storage or ImageStorage()
         self.parser = parser
 
+    def _persist_run_assets(
+        self,
+        chapter_id: str,
+        run_id: str,
+        artifacts: dict,
+    ) -> dict[str, object]:
+        """Move extracted ZIP image bytes to durable storage without failing OCR."""
+        raw_assets = artifacts.pop("asset_bytes", {})
+        if not isinstance(raw_assets, dict):
+            raw_assets = {}
+        existing_diagnostics = artifacts.get("asset_diagnostics")
+        if not isinstance(existing_diagnostics, dict):
+            existing_diagnostics = {}
+        try:
+            chapter = self.session.get(Chapter, chapter_id)
+            if chapter is None:
+                raise ChapterOCRNotFoundError(
+                    "Chapter not found while saving OCR media."
+                )
+            stored, storage_report = self.storage.save_mineru_assets(
+                raw_assets,
+                book_id=chapter.book_id,
+                chapter_id=chapter_id,
+                run_id=run_id,
+            )
+        except Exception as exc:
+            # A media-storage failure must not turn an otherwise successful OCR run
+            # into a failed OCR run. The original text/layout JSON remains durable.
+            stored = []
+            storage_report = {
+                "stored_count": 0,
+                "skipped_count": len(raw_assets),
+                "skipped": [
+                    {
+                        "reason": (
+                            f"storage_error:{type(exc).__name__}: {str(exc)[:240]}"
+                        )
+                    }
+                ],
+            }
+        artifacts["assets"] = stored
+        artifacts["asset_diagnostics"] = {
+            **existing_diagnostics,
+            **storage_report,
+        }
+        return artifacts["asset_diagnostics"]
+
     def _attach_source_blocks(self, run: ProcessingRun) -> None:
         try:
             blocks, report = materialize_source_blocks(self.session, run)
@@ -179,6 +226,8 @@ class ChapterOCRService:
             result = parser.resume_batch(str(batch_id))
             page_references = raw.get("page_references") or []
             page_count = int(raw.get("page_count") or len(page_references))
+            artifacts = result["artifacts"]
+            media_report = self._persist_run_assets(chapter_id, run.id, artifacts)
             run.raw_result = {
                 **raw,
                 "state": result["state"],
@@ -194,10 +243,11 @@ class ChapterOCRService:
                 "document_type": "chapter",
                 "page_count": page_count,
                 "page_references": page_references,
-                "artifacts": result["artifacts"],
+                "artifacts": artifacts,
             }
             run.quality_report = {
                 "page_count": page_count,
+                "media_assets": media_report,
                 "pdf_size_bytes": raw.get("pdf_size_bytes"),
                 "source_images_preserved": True,
                 "recovered_existing_batch": True,
@@ -237,6 +287,84 @@ class ChapterOCRService:
             self.session.commit()
             self.session.refresh(failed_run)
             return failed_run
+
+    def restore_media_assets(self, chapter_id: str, run_id: str) -> ProcessingRun:
+        """Download media from an existing MinerU batch without resubmitting the PDF."""
+        run = self.session.scalar(
+            select(ProcessingRun).where(
+                ProcessingRun.id == run_id,
+                ProcessingRun.chapter_id == chapter_id,
+                ProcessingRun.task_type == "chapter_ocr",
+                ProcessingRun.provider == "mineru_cloud",
+            )
+        )
+        if run is None:
+            raise ChapterOCRNotFoundError("OCR run not found in this chapter.")
+        if run.status != "succeeded":
+            raise ChapterOCRResumeConflictError(
+                "Media restoration requires an already successful MinerU run."
+            )
+        raw = run.raw_result if isinstance(run.raw_result, dict) else {}
+        batch_id = raw.get("batch_id")
+        if not batch_id:
+            raise ChapterOCRResumeConflictError(
+                "The OCR run has no saved MinerU batch_id; its media cannot be restored."
+            )
+
+        settings = get_settings()
+        parser = self.parser or MinerUCloudParser(
+            MinerUSettings(
+                token=settings.mineru_token,
+                api_base_url=settings.mineru_api_base_url,
+                model_version=settings.mineru_model_version,
+                language=settings.mineru_language,
+                poll_interval_seconds=settings.mineru_poll_interval_seconds,
+                max_wait_seconds=settings.mineru_max_wait_seconds,
+                download_proxy=getattr(settings, "mineru_download_proxy", None),
+            )
+        )
+        result = parser.resume_batch(str(batch_id))
+        fresh_artifacts = result["artifacts"]
+        media_report = self._persist_run_assets(
+            chapter_id, run.id, fresh_artifacts
+        )
+
+        normalized = (
+            dict(run.normalized_result)
+            if isinstance(run.normalized_result, dict)
+            else {}
+        )
+        existing_artifacts = normalized.get("artifacts")
+        existing_artifacts = (
+            dict(existing_artifacts) if isinstance(existing_artifacts, dict) else {}
+        )
+        existing_artifacts["assets"] = fresh_artifacts.get("assets", [])
+        existing_artifacts["asset_diagnostics"] = (
+            fresh_artifacts.get("asset_diagnostics", {})
+        )
+        normalized["artifacts"] = existing_artifacts
+        run.normalized_result = normalized
+
+        quality = dict(run.quality_report or {})
+        quality["media_assets"] = {
+            **media_report,
+            "restored_from_existing_batch": True,
+            "resubmitted_pdf": False,
+        }
+        run.quality_report = quality
+        run.raw_result = {
+            **raw,
+            "media_restore": {
+                "method": "download_existing_batch",
+                "resubmitted": False,
+            },
+            "download_diagnostics": result.get("download_diagnostics"),
+        }
+        self.session.commit()
+        self._attach_source_blocks(run)
+        self.session.commit()
+        self.session.refresh(run)
+        return run
 
     def process_chapter(self, chapter_id: str) -> ProcessingRun:
         chapter = self.session.get(Chapter, chapter_id)
@@ -306,6 +434,8 @@ class ChapterOCRService:
                 filename=f"chapter-{chapter.chapter_number}-{chapter.id[:8]}.pdf",
                 on_batch_created=persist_batch_id,
             )
+            artifacts = result["artifacts"]
+            media_report = self._persist_run_assets(chapter_id, run.id, artifacts)
             run.raw_result = {
                 "batch_id": result["batch_id"],
                 "state": result["state"],
@@ -324,10 +454,11 @@ class ChapterOCRService:
                 "document_type": "chapter",
                 "page_count": len(page_references),
                 "page_references": [asdict(item) for item in page_references],
-                "artifacts": result["artifacts"],
+                "artifacts": artifacts,
             }
             run.quality_report = {
                 "page_count": len(page_references),
+                "media_assets": media_report,
                 "pdf_size_bytes": len(pdf_bytes),
                 "source_images_preserved": True,
                 "notes": [

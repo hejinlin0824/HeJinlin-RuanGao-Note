@@ -353,3 +353,79 @@ def test_model_json_recovery_combines_nonoverlapping_text_fragments_inside_bbox(
     assert report["model_json_recoveries"][0]["match_method"] == (
         "model_json_contained_text_fragments"
     )
+
+
+
+def test_image_block_records_media_path_and_matches_persisted_asset_metadata():
+    source_path = "images/figure-1.jpg"
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "image",
+                        "page_idx": 0,
+                        "bbox": [10, 20, 400, 500],
+                        "content": {
+                            "image_content": [],
+                            "image_source": {"path": source_path},
+                        },
+                    }
+                ]
+            ]
+        },
+        "assets": [
+            {
+                "source_path": source_path,
+                "storage_path": "books/b/c/ocr/r/assets/abc.jpg",
+                "sha256": "a" * 64,
+                "mime_type": "image/jpeg",
+                "byte_size": 100,
+                "width": 50,
+                "height": 60,
+            }
+        ],
+    }
+    references = [{"pdf_page_index": 1, "chapter_page_id": "page-a"}]
+
+    blocks, report = build_source_block_payloads(artifacts, references)
+
+    assert len(blocks) == 1
+    assert blocks[0]["media_path"] == source_path
+    assert report["media_asset_report"] == {
+        "media_blocks_with_path": 1,
+        "persisted_assets": 1,
+        "matched_media_blocks": 1,
+        "missing_media_blocks": [],
+    }
+    assert report["warnings"] == []
+
+
+def test_image_block_without_asset_metadata_is_reported_without_losing_layout():
+    source_path = "images/not-yet-restored.jpg"
+    artifacts = {
+        "json": {
+            "chapter_content_list_v2.json": [
+                [
+                    {
+                        "type": "image",
+                        "page_idx": 0,
+                        "content": {"image_source": {"path": source_path}},
+                    }
+                ]
+            ]
+        }
+    }
+
+    blocks, report = build_source_block_payloads(
+        artifacts,
+        [{"pdf_page_index": 1, "chapter_page_id": "page-a"}],
+    )
+
+    assert len(blocks) == 1
+    assert blocks[0]["media_path"] == source_path
+    assert report["media_asset_report"]["matched_media_blocks"] == 0
+    assert report["media_asset_report"]["missing_media_blocks"][0]["media_path"] == (
+        source_path
+    )
+    assert any("not yet persisted" in warning for warning in report["warnings"])

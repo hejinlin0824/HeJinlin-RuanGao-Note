@@ -6,12 +6,15 @@ import io
 import zipfile
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from ruangao_note.core.config import get_settings
 from ruangao_note.db.base import Base
-from ruangao_note.db.session import create_database_engine
+from ruangao_note.db.session import create_database_engine, get_db
 from ruangao_note.domain.models import Book, Chapter, ProcessingRun, SourceBlock
+from ruangao_note.main import app
 from ruangao_note.services.chapter_ocr import (
     ChapterOCRService,
     build_chapter_pdf,
@@ -760,4 +763,92 @@ def test_materialize_repairs_previously_empty_source_blocks_preserving_ids(tmp_p
         )
     finally:
         session.close()
+        engine.dispose()
+
+
+
+def test_source_block_api_exposes_only_registered_persisted_media_assets(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "uploads"))
+    get_settings.cache_clear()
+    database_path = (tmp_path / "source-media-api.db").as_posix()
+    engine = create_database_engine(f"sqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    session = Session(engine, expire_on_commit=False)
+    book = Book(title="Source media API test")
+    chapter = Chapter(book=book, chapter_number=1, title="Media")
+    session.add(chapter)
+    session.commit()
+    storage = ImageStorage(tmp_path / "uploads")
+    uploaded = PageService(session, storage).upload(
+        chapter.id,
+        [PageUpload("page-1.png", image_bytes("white"))],
+    )
+    page = uploaded["pages"][0]
+    image = image_bytes("purple")
+    saved, _report = storage.save_mineru_assets(
+        {"images/figure-api.png": image},
+        book_id=book.id,
+        chapter_id=chapter.id,
+        run_id="api-media-run",
+    )
+    run = ProcessingRun(
+        chapter_id=chapter.id,
+        page_id=None,
+        task_type="chapter_ocr",
+        provider="mineru_cloud",
+        provider_version="vlm",
+        status="succeeded",
+        normalized_result={"artifacts": {"assets": saved}},
+    )
+    session.add(run)
+    session.flush()
+    block = SourceBlock(
+        chapter_id=chapter.id,
+        page_id=page.id,
+        processing_run_id=run.id,
+        block_key="api-media-image",
+        block_type="image",
+        text="",
+        media_path="images/figure-api.png",
+        content_hash="d" * 64,
+        version=1,
+        sort_order=0,
+        is_active=True,
+    )
+    session.add(block)
+    session.commit()
+    chapter_id, run_id, digest = chapter.id, run.id, saved[0]["sha256"]
+    session.close()
+    factory = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+
+    def override_get_db():
+        with factory() as request_session:
+            yield request_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            listing = client.get(
+                f"/api/chapters/{chapter_id}/ocr-runs/{run_id}/source-blocks"
+            )
+            assert listing.status_code == 200
+            assert listing.json()[0]["media_path"] == "images/figure-api.png"
+            media_url = listing.json()[0]["media_url"]
+            assert media_url.endswith(f"/assets/{digest}")
+
+            preview = client.get(media_url)
+            assert preview.status_code == 200
+            assert preview.content == image
+            assert preview.headers["content-type"] == "image/png"
+
+            unknown = client.get(
+                f"/api/chapters/{chapter_id}/ocr-runs/{run_id}/assets/"
+                + "0" * 64
+            )
+            assert unknown.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
         engine.dispose()

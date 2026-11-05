@@ -388,6 +388,10 @@ def test_0004_migration_adds_source_link_to_legacy_sections_table(
             for foreign_key in foreign_keys
         )
         assert "ix_sections_source_block_id" in indexes
+        source_block_columns = {
+            column["name"] for column in inspector.get_columns("source_blocks")
+        }
+        assert "media_path" in source_block_columns
     finally:
         engine.dispose()
         get_settings.cache_clear()

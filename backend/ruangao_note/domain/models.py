@@ -205,6 +205,7 @@ class SourceBlock(TimestampMixin, Base):
     bbox: Mapped[dict[str, float] | list[float] | None] = mapped_column(JSON)
     confidence: Mapped[float | None] = mapped_column(Float)
     content_hash: Mapped[str | None] = mapped_column(String(64))
+    media_path: Mapped[str | None] = mapped_column(String(1000))
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -402,7 +402,7 @@
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
 | TP-04 | GitHub CI 通过，待 Windows/真实云端验收 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
-| TP-05 | 代码与 CI 已通过，待真实样本复验 | V2 优先、V1 精确匹配、model.json 同页 bbox 恢复；清洗仍为 review_only。现有 58fff639 样本待复验，图片资源独立持久化仍待完善 |
+| TP-05 | 真实文本样本首轮复验通过，图片资源功能待页面验收 | 42/42 布局映射、0 未映射、0 异常空文本；model.json 成功恢复 1 个段落；6 条清洗候选均 review_only。新增 MinerU 图片资产独立持久化及现有 batch 恢复入口，待 Windows 验收 |
 | TP-06 | 第一阶段实现与 CI 通过，待 Windows 页面验收 | heading SourceBlock → Section 目录树；编号/父子层级识别、结构问题 AuditIssue、人工修正 AuditEvent、原文证据链接 |
 | TP-07～TP-16 | 待开始 | TP-06 验收后按依赖顺序继续 |
 
@@ -509,7 +509,7 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - 当前实现仍是同步长请求，默认最多轮询 25 分钟；任务队列、回调、断点恢复与自动 SourceBlock 生成尚未实现。
 
 
-## 11. TP-05 第一阶段实现记录（代码与 CI 已通过，等待真实样本复验）
+## 11. TP-05 第一阶段实现记录（文本真实样本首轮复验通过，图片资源待 Windows 验收）
 
 ### 已实现
 
@@ -526,8 +526,11 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - 如果 ZIP 没有 `content_list*.json`，只保留原始 full.md，不从无页码 Markdown 猜测 SourceBlock 的页归属；质量报告会给出 warning。
 - Content List bbox 原样保存；只有 model.json 明确采用 0～1 归一化坐标时，恢复算法才转换为 0～1000 空间，并保留转换来源。
 - 当前清洗规则只做候选标注，不会自动移除页眉、页脚、水印或脚注；下一阶段需要结合真实教材样本评估误报，再设计人工确认/可撤销的清洗视图。
-- 图片块的 image_source.path 已能识别，但 ZIP 中二进制图片资产的独立提取、持久化与工作台预览尚未完成；bbox 到前端图片的精确叠加查看仍待后续工作。
-- model.json 回补目前已有合成数据回归测试；真实教材 run 58fff639-7322-470a-98a3-b666a76f805f 是否命中，仍需用户在工作台复验，不能仅凭 CI 推断。
+- MinerU ZIP 中的 raster 图片资源已加入独立提取与持久化：只接收 JPG/JPEG/PNG/WEBP/TIFF，单文件 20 MiB、累计 200 MiB；Pillow 校验后按 SHA-256 命名保存，路径按 book/chapter/run 隔离。数据库只保存资源元数据，不保存二进制。
+- `SourceBlock.media_path` 保存布局文件中的原始媒体路径；SourceBlock API 根据同一 OCR run 的资产目录生成 `media_url`。工作台可分别预览教材整页和 OCR 提取的图片资源。
+- 已新增成功 run 的媒体恢复入口：使用已有 batch_id 重新下载 ZIP，不重新提交 PDF 或运行 OCR。用户原有 run 58fff639 可优先尝试该路径；能否恢复取决于 MinerU 是否仍保留 batch 结果。
+- bbox 到教材整页的精确叠加查看、页面旋转换算和 SVG 等矢量资源仍待后续工作。
+- 真实教材 run 58fff639-7322-470a-98a3-b666a76f805f 已由用户工作台报告确认：42/42 布局项映射，4 页引用，42 个块，1 个视觉类空文本、0 个异常空文本；model.json 成功恢复 1 个 paragraph，未映射 0，清洗候选 6 条且均为 review_only。图片资源文件仍需通过恢复按钮做一次浏览器预览验收。
 
 ### 新增 API
 
@@ -537,6 +540,7 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 ### 验收重点
 
 - 两页以上内容必须映射到正确 ChapterPage。
+- ZIP 图片资源应按 SHA-256 持久化，已有成功 batch 可恢复但不得重跑 OCR；图片 URL 只能访问当前 run 已登记资源。
 - 表格 HTML、公式文本和图注不得丢失。
 - 疑似水印/脚注/重复页眉页脚只能标记，不能从证据中删除。
 - 相同 ProcessingRun 重复物化不得重复创建 SourceBlock，修复已有空块时保留其数据库 ID。
