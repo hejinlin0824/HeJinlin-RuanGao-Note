@@ -1,8 +1,14 @@
 """TP-06 regression tests for rule-based outline extraction and manual correction."""
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session, sessionmaker
+
+from ruangao_note.core.config import get_settings
 
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine, get_db
@@ -317,3 +323,49 @@ def test_outline_api_generates_lists_and_manually_updates_sections(tmp_path):
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
+
+
+
+def test_0004_migration_adds_source_link_to_legacy_sections_table(
+    tmp_path, monkeypatch
+):
+    """An older database without source_block_id must upgrade without table recreation."""
+    database_path = tmp_path / "legacy-outline.sqlite"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    get_settings.cache_clear()
+    project_root = Path(__file__).resolve().parents[2]
+    config = Config(str(project_root / "alembic.ini"))
+
+    try:
+        # The historical 0001 migration uses current metadata; emulate a database
+        # created before TP-06 by removing the new nullable column and its index.
+        command.upgrade(config, "0003_ocr_results")
+        engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "DROP INDEX IF EXISTS ix_sections_source_block_id"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE sections DROP COLUMN source_block_id"
+            )
+        engine.dispose()
+
+        command.upgrade(config, "head")
+
+        migrated_engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+        try:
+            inspector = inspect(migrated_engine)
+            columns = {column["name"] for column in inspector.get_columns("sections")}
+            foreign_keys = inspector.get_foreign_keys("sections")
+            indexes = {index["name"] for index in inspector.get_indexes("sections")}
+            assert "source_block_id" in columns
+            assert any(
+                foreign_key["constrained_columns"] == ["source_block_id"]
+                and foreign_key["referred_table"] == "source_blocks"
+                for foreign_key in foreign_keys
+            )
+            assert "ix_sections_source_block_id" in indexes
+        finally:
+            migrated_engine.dispose()
+    finally:
+        get_settings.cache_clear()
