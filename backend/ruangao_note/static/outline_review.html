@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>目录结构识别与修正 · RuanGao Note</title>
+<style>
+:root{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:#1e293b;background:#f4f6fb;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}.shell{max-width:1440px;margin:0 auto;padding:28px 22px 60px}
+header{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:20px}
+.eyebrow{font-size:11px;letter-spacing:.14em;color:#5267a7;font-weight:800}
+h1{font-size:25px;margin:7px 0}.sub{margin:0;color:#64748b;font-size:14px;line-height:1.6}
+.panel{background:#fff;border:1px solid #e1e7f0;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 5px 20px #20305008}
+.toolbar{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}
+label{display:block;color:#64748b;font-size:12px;margin-bottom:6px}
+select,input{font:inherit;width:100%;border:1px solid #d9e1ec;border-radius:8px;padding:9px 10px;background:#fff;color:#1e293b;min-width:0}
+button{border:0;border-radius:8px;background:#284a9a;color:#fff;padding:10px 14px;font-weight:650;cursor:pointer}
+button.ghost{background:#edf1f7;color:#334155}button:disabled{opacity:.48;cursor:not-allowed}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.status{padding:11px 13px;border-radius:9px;margin-top:14px;background:#f0f4fa;color:#52627a;white-space:pre-wrap;line-height:1.5}
+.status.ok{background:#eaf7f1;color:#176c4c}.status.err{background:#fff0ed;color:#a33d31}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.stat{background:#f7f9fc;border:1px solid #e1e7f0;border-radius:10px;padding:12px}.stat b{display:block;font-size:22px}.stat span{font-size:12px;color:#64748b}
+.layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.8fr);gap:16px;align-items:start}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.section-head h2{font-size:16px;margin:0}.muted{color:#7b8798;font-size:12px}
+.tree{display:flex;flex-direction:column;gap:9px}
+.node{border:1px solid #e0e6ef;border-radius:10px;background:#fff;padding:12px 13px}
+.node-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.node-title{font-weight:700;font-size:13px;min-width:0;overflow-wrap:anywhere}
+.node-fields{display:grid;grid-template-columns:minmax(180px,2fr) minmax(80px,.7fr) 70px minmax(125px,1fr) 70px auto;gap:8px;align-items:end}
+.node-fields label{font-size:10px;margin:0 0 4px}.node-fields input,.node-fields select{padding:7px 8px;font-size:12px}
+.node-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:9px}
+.node-meta a{font-size:12px;color:#315caf;text-decoration:none}.node-meta a:hover{text-decoration:underline}
+.badge{display:inline-block;background:#eef2f8;color:#52627a;border-radius:5px;padding:3px 7px;font-size:10px}
+.badge.warn{background:#fff2db;color:#93600d}.badge.err{background:#ffe9e5;color:#a33d31}
+.issue{border:1px solid #f0dfbf;background:#fffaf1;border-radius:9px;padding:11px;margin:8px 0}
+.issue strong{font-size:12px}.issue p{font-size:12px;margin:5px 0;color:#7c5a24;line-height:1.5}
+.empty{padding:28px 12px;text-align:center;color:#8793a6;border:1px dashed #d5deea;border-radius:10px}
+.small{font-size:11px;color:#7b8798;line-height:1.5}
+@media(max-width:1050px){.node-fields{grid-template-columns:1fr 1fr 80px 1fr 80px}.node-fields button{grid-column:1/-1}.layout{grid-template-columns:1fr}}
+@media(max-width:760px){.shell{padding:18px 12px}.toolbar{grid-template-columns:1fr 1fr}.stats{grid-template-columns:repeat(2,1fr)}header{display:block}.node-fields{grid-template-columns:1fr 1fr}.node-fields button{grid-column:auto}}
+@media(max-width:480px){.toolbar{grid-template-columns:1fr}.node-fields{grid-template-columns:1fr 1fr}.node-fields .wide{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main class="shell">
+<header>
+  <div>
+    <div class="eyebrow">RUANGAO NOTE / TP-06</div>
+    <h1>教材目录结构识别与修正</h1>
+    <p class="sub">只从已确认的标题证据块生成章内目录。编号明确的标题按规则建立层级；不明确的标题保留并进入人工核对，不会被静默丢弃。</p>
+  </div>
+  <div class="actions"><button class="ghost" id="refreshAll">刷新数据</button></div>
+</header>
+
+<section class="panel">
+  <div class="toolbar">
+    <div><label for="book">教材</label><select id="book"><option value="">加载中…</option></select></div>
+    <div><label for="chapter">章节</label><select id="chapter"><option value="">先选择教材</option></select></div>
+    <div><label for="summary">当前目录状态</label><input id="summary" value="尚未载入目录" readonly></div>
+    <div class="actions"><button id="generate" disabled>识别 / 补全目录</button><button class="ghost" id="reload" disabled>刷新目录</button></div>
+  </div>
+  <div id="status" class="status">正在连接本地服务…</div>
+  <div class="stats">
+    <div class="stat"><b id="sSections">0</b><span>目录节点</span></div>
+    <div class="stat"><b id="sLinked">0</b><span>已绑定原文标题</span></div>
+    <div class="stat"><b id="sIssues">0</b><span>待核对问题</span></div>
+    <div class="stat"><b id="sUnnumbered">0</b><span>需人工确认层级</span></div>
+  </div>
+</section>
+
+<section class="layout">
+  <div class="panel">
+    <div class="section-head"><h2>目录树</h2><span class="muted">编辑标题、编号、层级、父级和排序后保存</span></div>
+    <div id="tree" class="tree"><div class="empty">选择章节后识别目录</div></div>
+  </div>
+  <aside>
+    <section class="panel">
+      <div class="section-head"><h2>结构检查</h2><span class="muted">只报告，不自动删除</span></div>
+      <div id="issues"><div class="empty">载入目录后显示编号/层级问题</div></div>
+    </section>
+    <section class="panel">
+      <div class="section-head"><h2>目录修改记录</h2><span class="muted">自动识别与人工修正历史</span></div>
+      <div id="history"><div class="empty">载入目录后显示变更记录</div></div>
+    </section>
+    <section class="panel">
+      <div class="section-head"><h2>识别原则</h2></div>
+      <div class="small">
+        <p><strong>1. 证据优先</strong><br>目录节点必须关联同一章节中的 heading SourceBlock，点击原文页可回看证据。</p>
+        <p><strong>2. 编号建树</strong><br>1.1、1.1.1 等编号按前缀定位父级；“1.”、“2.”等单级编号结合前一个明确标题暂定为子级。</p>
+        <p><strong>3. 不确定不隐藏</strong><br>无编号标题或缺失父级会生成审核问题，允许在此页面修正。</p>
+        <p><strong>4. 修改有记录</strong><br>人工修改会写入 AuditEvent；再次识别只补充未关联的标题，不覆盖已有人工修改。</p>
+      </div>
+    </section>
+  </aside>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let sections=[],issues=[],history=[],currentChapter="",books=[];
+async function api(path,options){
+  const response=await fetch(path,options||{}),raw=await response.text();
+  let data;try{data=raw?JSON.parse(raw):null}catch{data=raw}
+  if(!response.ok){const detail=data&&data.detail?data.detail:raw;throw Error(typeof detail==="string"?detail:JSON.stringify(detail))}
+  return data;
+}
+function esc(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function status(message,kind=""){$("status").textContent=message;$("status").className="status "+kind}
+function updateStats(){
+  $("sSections").textContent=sections.length;
+  $("sLinked").textContent=sections.filter(section=>section.source_block_id).length;
+  $("sIssues").textContent=issues.length;
+  $("sUnnumbered").textContent=issues.filter(issue=>issue.issue_type==="unclassified_heading_level").length;
+  $("summary").value=sections.length+" 个目录节点 · "+issues.length+" 个待核对问题";
+  $("generate").disabled=!currentChapter;
+  $("reload").disabled=!currentChapter;
+}
+function descendantsOf(sectionId){
+  const result=new Set([sectionId]);let changed=true;
+  while(changed){changed=false;for(const section of sections){if(section.parent_id&&result.has(section.parent_id)&&!result.has(section.id)){result.add(section.id);changed=true}}}
+  return result;
+}
+function parentOptions(section){
+  const blocked=descendantsOf(section.id);
+  return '<option value="">根目录</option>'+sections.filter(item=>item.id!==section.id&&!blocked.has(item.id)).map(item=>'<option value="'+esc(item.id)+'" '+(item.id===section.parent_id?'selected':'')+'>'+esc((item.section_number?item.section_number+" ":"")+item.title)+'</option>').join("");
+}
+function renderNode(section,depth){
+  const source=section.source_block_id?'<span class="badge">原文已绑定</span>':'<span class="badge warn">缺少原文</span>';
+  const link=section.image_url?'<a href="'+esc(section.image_url)+'" target="_blank" rel="noopener">查看教材原页</a>':'<span class="muted">无原文页链接</span>';
+  return '<article class="node" style="margin-left:'+Math.min(depth,5)*15+'px" data-id="'+esc(section.id)+'">'
+    +'<div class="node-top"><div class="node-title">'+esc((section.section_number?section.section_number+" ":"")+section.title)+'</div>'
+    +'<div class="actions">'+source+'<span class="badge">L'+section.level+'</span></div></div>'
+    +'<div class="node-fields">'
+    +'<div class="wide"><label>标题</label><input data-field="title" value="'+esc(section.title)+'"></div>'
+    +'<div><label>编号</label><input data-field="section_number" value="'+esc(section.section_number||"")+'" placeholder="可留空"></div>'
+    +'<div><label>层级</label><input data-field="level" type="number" min="1" max="12" value="'+section.level+'"></div>'
+    +'<div><label>父级目录</label><select data-field="parent_id">'+parentOptions(section)+'</select></div>'
+    +'<div><label>排序</label><input data-field="sort_order" type="number" min="0" value="'+section.sort_order+'"></div>'
+    +'<button data-save="'+esc(section.id)+'">保存</button></div>'
+    +'<div class="node-meta">'+link+(section.source_block_id?'<span class="muted">来源块：'+esc(section.source_block_id)+'</span>':'')
+    +(section.source_text?'<span class="muted">原文：'+esc(section.source_text.slice(0,90))+'</span>':'')+'</div></article>';
+}
+function renderTree(){
+  if(!sections.length){$("tree").innerHTML='<div class="empty">当前章节还没有目录节点。点击“识别 / 补全目录”从标题原文块生成。</div>';return}
+  const children=new Map();for(const section of sections){const key=section.parent_id||"__root__";if(!children.has(key))children.set(key,[]);children.get(key).push(section)}
+  for(const list of children.values())list.sort((a,b)=>a.sort_order-b.sort_order||a.id.localeCompare(b.id));
+  const rendered=new Set();
+  function branch(parentId,depth){
+    return (children.get(parentId||"__root__")||[]).map(section=>{
+      if(rendered.has(section.id))return "";rendered.add(section.id);
+      return renderNode(section,depth)+branch(section.id,depth+1);
+    }).join("");
+  }
+  let html=branch(null,0);
+  for(const section of sections){if(!rendered.has(section.id)){html+=renderNode(section,0);rendered.add(section.id)}}
+  $("tree").innerHTML=html;
+  $("tree").querySelectorAll("[data-save]").forEach(button=>button.onclick=()=>saveSection(button.dataset.save,button.closest(".node")));
+}
+function renderIssues(){
+  $("issues").innerHTML=issues.length?issues.map(issue=>'<div class="issue"><strong>'+esc(issue.issue_type)+' · '+esc(issue.severity)+'</strong><p>'+esc(issue.message)+'</p><div class="small">对象：'+esc(issue.entity_type)+' / '+esc(issue.entity_id)+'</div></div>').join(""):'<div class="empty">没有待核对问题。仍建议抽查目录与教材原页是否一致。</div>';
+}
+function renderHistory(){
+  $("history").innerHTML=history.length?history.map(event=>{
+    const when=event.created_at?event.created_at.replace("T"," ").slice(0,19):"";
+    return '<div class="issue"><strong>'+esc(event.action)+' · '+esc(event.actor||"system")+'</strong><p>'+esc(event.reason||"无备注")+'</p><div class="small">'+esc(when)+' · '+esc(event.entity_id)+'</div></div>';
+  }).join(""):'<div class="empty">暂无目录变更记录</div>';
+}
+async function loadSections(){
+  if(!currentChapter)return;
+  const data=await api("/api/chapters/"+encodeURIComponent(currentChapter)+"/sections");
+  sections=data.items||[];issues=data.issues||[];history=data.history||[];
+  updateStats();renderTree();renderIssues();renderHistory();
+  status("已载入 "+sections.length+" 个目录节点和 "+issues.length+" 个待核对问题。","ok");
+}
+async function saveSection(id,node){
+  const read=field=>node.querySelector('[data-field="'+field+'"]').value;
+  const body={
+    title:read("title"),section_number:read("section_number")||null,
+    level:Number(read("level")),parent_id:read("parent_id")||null,
+    sort_order:Number(read("sort_order")),actor:"user",reason:"在目录工作台中人工修正"
+  };
+  try{
+    await api("/api/chapters/"+encodeURIComponent(currentChapter)+"/sections/"+encodeURIComponent(id),{
+      method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
+    });
+    await loadSections();status("目录节点已保存，修改记录已写入审核历史。","ok");
+  }catch(error){status("保存失败："+error.message,"err")}
+}
+async function loadBooks(){
+  books=await api("/api/books");
+  $("book").innerHTML='<option value="">选择教材</option>'+books.map(book=>'<option value="'+esc(book.id)+'">'+esc(book.title)+(book.edition?' · '+esc(book.edition):"")+'</option>').join("");
+  status(books.length?"已连接本地数据库，请选择教材和章节。":"数据库中还没有教材。",books.length?"ok":"");
+}
+async function loadChapters(){
+  const bookId=$("book").value;currentChapter="";sections=[];issues=[];renderTree();renderIssues();updateStats();
+  if(!bookId){$("chapter").innerHTML='<option value="">选择教材</option>';return}
+  const data=await api("/api/books/"+encodeURIComponent(bookId)+"/chapters");
+  $("chapter").innerHTML='<option value="">选择章节</option>'+data.map(chapter=>'<option value="'+esc(chapter.id)+'">第 '+chapter.chapter_number+' 章 · '+esc(chapter.title)+'</option>').join("");
+}
+async function generate(){
+  if(!currentChapter)return;
+  $("generate").disabled=true;status("正在从标题证据块生成目录结构…");
+  try{
+    const data=await api("/api/chapters/"+encodeURIComponent(currentChapter)+"/sections/generate",{method:"POST"});
+    sections=data.items||[];issues=data.issues||[];history=data.history||[];updateStats();renderTree();renderIssues();renderHistory();
+    const report=data.report||{};
+    status((report.message||"目录生成完成。")+"\n新增审核问题："+(report.issue_count??issues.length)+"。已有人工目录不会被覆盖。",issues.length?"err":"ok");
+  }catch(error){status("目录识别失败："+error.message,"err")}
+  finally{$("generate").disabled=false}
+}
+$("book").onchange=()=>loadChapters().catch(error=>status(error.message,"err"));
+$("chapter").onchange=()=>{currentChapter=$("chapter").value;loadSections().catch(error=>status(error.message,"err"))};
+$("generate").onclick=generate;$("reload").onclick=()=>loadSections().catch(error=>status(error.message,"err"));
+$("refreshAll").onclick=()=>loadBooks().then(loadChapters).catch(error=>status(error.message,"err"));
+loadBooks().catch(error=>status("无法连接本地服务："+error.message,"err"));
+</script>
+</body>
+</html>

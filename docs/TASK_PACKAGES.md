@@ -2,7 +2,7 @@
 
 - 对应 Spec：v0.2
 - Python 基线：3.13.15
-- 当前阶段：规划文档已落盘；尚未开始业务代码实现。
+- 当前阶段：TP-00～TP-03 已完成验收；TP-04 已包含 Mock OCR、MinerU v4 云端章节批量解析、隐藏式本地 Token 配置和章节 PDF 组装测试；GitHub Actions 已通过（35 passed），等待 Windows 本地与真实云端验收。
 - 实施原则：一次推进一个任务包；完成后运行测试、检查差异、记录结果，再进入下一个任务包。
 
 ## 1. 总体实施策略
@@ -96,8 +96,8 @@
 1. 建立 Book、Chapter、Section、ChapterPage。
 2. 建立 ProcessingRun、SourceBlock。
 3. 建立 KnowledgeNode、KnowledgeSource。
-4. 建立 Relation、Figure、AuditIssue、AuditEvent。
-5. 建立 Question、ReviewState、AnswerLog 的初始模型或预留迁移。
+4. 建立 Relation、RelationEvidence、Figure、AuditIssue、AuditEvent。
+5. 建立 Question、QuestionSource、ReviewState、AnswerLog 的初始模型或预留迁移。
 6. 配置 SQLAlchemy 关系、约束和 Alembic 初始迁移。
 7. 建立 Repository/Service 层，避免 API 直接操作复杂 SQL。
 
@@ -110,6 +110,8 @@
 - 有模型 CRUD 和迁移测试。
 
 ### TP-03：图片导入与页面管理
+
+状态：自动化测试与 Windows 本地验收通过（22 passed）；TP-03 已完成。
 
 目标：可靠保存原始教材页面，并支持顺序管理。
 
@@ -396,12 +398,28 @@
 | 任务包 | 状态 | 说明 |
 |---|---|---|
 | TP-00 | 文档已落盘 | README、Spec、任务包路线图 |
-| TP-01 | 待开始 | 下一个执行任务 |
-| TP-02～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-01 | 已完成 | Python 3.13.15、Ruff、pytest、FastAPI 启动和健康检查已验收 |
+| TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
+| TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
+| TP-04 | GitHub CI 通过，待 Windows/真实云端验收 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
+| TP-05 | 真实文本样本首轮复验通过，图片资源功能待页面验收 | 42/42 布局映射、0 未映射、0 异常空文本；model.json 成功恢复 1 个段落；6 条清洗候选均 review_only。新增 MinerU 图片资产独立持久化及现有 batch 恢复入口，待 Windows 验收 |
+| TP-06 | 第一阶段实现与 CI 通过，待 Windows 页面验收 | heading SourceBlock → Section 目录树；编号/父子层级识别、结构问题 AuditIssue、人工修正 AuditEvent、原文证据链接 |
+| TP-07～TP-16 | 待开始 | TP-06 验收后按依赖顺序继续 |
 
-## 6. 第一轮具体执行顺序
+## 6. TP-01 当前实现记录
 
-1. TP-01：先检查仓库、Python 3.13.15、依赖兼容性和最小启动。
+已在 dev 分支建立：
+- .python-version（3.13.15）和 pyproject.toml（要求 Python >=3.13,<3.14）。
+- FastAPI 应用入口、/health/live 与 /health/ready。
+- 基于环境变量的 Pydantic Settings。
+- pytest 健康检查与配置测试。
+- Ruff 配置、GitHub Actions Python CI、.gitignore 和 .env.example。
+
+待完成验收：在实际 Python 3.13.15 环境执行 pip install -e ".[dev]"、ruff check .、pytest，并确认 GitHub Actions 成功。未获得运行结果前，不将 TP-01 标记为完成。
+
+## 7. 第一轮具体执行顺序
+
+1. TP-01：完成本地/CI 验收，确认 Python 3.13.15、依赖兼容性和最小启动。
 2. TP-02：确定领域模型与数据库迁移。
 3. TP-03：打通图片上传和页面管理。
 4. TP-04：接入 OCR Provider 和图像预处理。
@@ -409,3 +427,152 @@
 6. 之后再进入目录识别、知识点、三层架构视图。
 
 每一轮只推进当前任务包。若发现 Spec 中有设计缺口，先记录并更新文档，再实现，不要临时堆代码。
+
+
+## 8. TP-02 当前实现记录（待本地验收）
+
+### 已提交到 dev 的实现
+
+- 数据库基础设施：SQLAlchemy 2.x Declarative Base、UTC 时间戳、SQLite 文件目录创建、SQLite 外键约束启用、进程级 Engine/SessionFactory 和请求级 Session 生成器。
+- 教材目录与页面：Book、Chapter、Section、ChapterPage。
+- 处理与证据：ProcessingRun、SourceBlock。
+- 知识结构：KnowledgeNode、KnowledgeSource（知识点与原文块多对多）。
+- 关系与审核：Relation、RelationEvidence、Figure、AuditIssue、AuditEvent。
+- 题库与复习预留：Question、QuestionSource、ReviewState、AnswerLog。
+- 初始 Repository/Service：BookRepository、BookService。
+- Alembic 配置与初始迁移：alembic.ini、backend/alembic。
+- readiness 接口现在执行数据库 SELECT 1；数据库不可用时返回 HTTP 503。
+- 自动化测试覆盖表结构、知识点—原文多对多、关系—原文证据关联、目录树与知识树分离、关系端点约束、SQLite 外键和 BookService。
+
+### 关键建模约束
+
+1. Section.parent_id 只表达教材目录树；KnowledgeNode.parent_id 只表达知识点学习层级，二者完全独立。
+2. KnowledgeSource 是独立关联表，一个知识点可引用多个 SourceBlock，一个 SourceBlock 也可被多个知识点引用。
+3. Relation 的端点必须是完整的“知识点—知识点”或“章节—章节”组合，不能混用；关系方向、类型、来源和审核状态独立保存。RelationEvidence 通过外键关联真实 SourceBlock，避免把无法校验的来源 ID 塞进自由文本。
+4. SourceBlock 必须关联 ChapterPage 和 ProcessingRun，原文证据带有处理版本。
+5. ReviewState/AnswerLog 通过 target_type + target_id 支持知识点或题目两种复习粒度；这两处是有意采用的多态引用，后续服务层必须验证目标存在。
+
+### 初始迁移说明
+
+当前 0001 初始迁移通过当时的 SQLAlchemy metadata 创建初始空库，目的是先建立可运行的初始 schema。它只用于全新数据库初始化；后续结构变更必须使用显式 Alembic operations 生成不可变迁移，不能修改已发布迁移来“追平”模型。
+
+### 本地验收命令
+
+在项目根目录、Python 3.13.15 虚拟环境中执行：
+
+```powershell
+ruff check .
+pytest -v
+alembic upgrade head
+alembic current
+```
+
+再验证数据库文件生成后，启动服务：
+
+```powershell
+uvicorn ruangao_note.main:app --app-dir backend --reload --host 127.0.0.1 --port 8765
+```
+
+访问 `/health/ready` 应返回 `{"status":"ready"}`。首次迁移后可通过 `alembic current` 确认版本为 `0001_initial_domain`。
+
+TP-02 在以上命令真实运行并修复问题前，不标记为完成。
+
+
+## 9. TP-04 首版实现记录（CI 通过，等待 Windows 验收）
+
+### 已实现
+
+- `ProcessingRun` 新增 `normalized_result` 与 `quality_report` JSON 字段，使用 `0003_ocr_results` 独立迁移；保留 `raw_result` 原始响应。
+- `OCRProvider` Protocol 规定统一识别方法；`OCRProviderResponse` 与 `OCRBlock` 作为 Provider 无关的标准化输入。
+- `normalize_response` 校验置信度范围、bbox 归一化范围与坐标方向，统一文本块 ID、类型、顺序和字段。
+- `MockOCRProvider` 不调用外部服务、不生成虚构文本，明确在原始响应中标记 `simulated=true`。
+- `preprocess_image` 在内存中执行 EXIF 方向校正、页面旋转、灰度、自动对比度和质量启发式检查；不覆盖原图、不保存未经请求的派生文件。
+- `OCRService` 每次调用新建 ProcessingRun，记录 queued/running/succeeded/failed 生命周期、原始响应、标准化结果、质量指标和异常。
+- API：`POST /api/chapters/{chapter_id}/pages/{page_id}/ocr`；`GET /api/chapters/{chapter_id}/pages/{page_id}/ocr-runs`。
+
+### 当前限制
+
+- OCR 执行是同步请求内处理，尚未接入后台队列；长耗时云 OCR 不应直接沿用同步执行方式。
+- Mock Provider 只验证接口和持久化链路，真实识别能力需要后续独立 Provider 实现。
+- 当前质量指标为启发式提示，不等同于专业图像质量评估；倾斜角检测、裁边、透视矫正尚未实现。
+- 真实 MinerU 章节结果现已在 TP-05 中按需/成功后转为 SourceBlock；Mock Provider 仍不会生成虚构原文块。
+
+
+## 10. TP-04 MinerU 云端章节批处理补充
+
+- 参考项目：`hejinlin0824/HeJinlin-paperLib/backend/app/services/parser_mineru.py`，复用其 MinerU v4 流程：申请批量上传 URL、预签名 PUT、轮询 batch、下载 ZIP。
+- 章节接口：`POST /api/chapters/{chapter_id}/ocr`。仅选择 `status=stored` 的活动页面，按 `sort_order` 排序，构建一个多页 PDF 并创建一个 MinerU batch 任务。
+- PDF 仅作为临时内存派生文件；EXIF 方向和页面旋转会应用到 PDF 页面，单页最大边长限制为 3508 像素，原图与 SHA-256 不变。
+- MinerU 结果中的 Markdown、JSON 和文件清单保存到章节级 ProcessingRun；每个 PDF 页码与 ChapterPage ID 的映射同时保存。TP-05 再把布局块映射成稳定 SourceBlock。
+- Token 仅从本机项目根目录 `.env` 读取；`scripts/configure_mineru.ps1` 使用隐藏输入写入该文件。真实凭据不得进入仓库、数据库或日志。
+- 预签名上传 URL 和结果 ZIP URL 均不携带 Bearer Token；ZIP 路径穿越会被拒绝。
+- 当前实现仍是同步长请求，默认最多轮询 25 分钟；任务队列、回调、断点恢复与自动 SourceBlock 生成尚未实现。
+
+
+## 11. TP-05 第一阶段实现记录（文本真实样本首轮复验通过，图片资源待 Windows 验收）
+
+### 已实现
+
+- 优先从 MinerU ZIP 中的 `content_list_v2.json` 读取标题、正文、表格、公式、图片说明、脚注等布局项；旧版 `content_list.json` 作为兼容来源。
+- 按 MinerU 的 0-based `page_idx` 映射 TP-04 保存的 1-based `pdf_page_index`，再关联原始 `ChapterPage.id`。
+- 使用来源页 ID、块类型、文本内容哈希和同页重复序号生成版本内稳定 `block_key`；数据库唯一约束仍为 `(processing_run_id, block_key)`。
+- 写入已有 SourceBlock 表；保留 bbox、文本哈希、类型、排序和 ProcessingRun 版本。对 V2 空文本块，先按同页/同类型/exact bbox 从 V1 回补；仍为空时，再尝试从同页 model.json 文本块按归一化 bbox 精确、高重叠或不重叠片段覆盖规则恢复，并记录来源 entry、bbox、坐标换算和匹配方式。
+- 生成带 `<!-- source:block_key -->` 锚点的章节 Markdown。
+- 对 arXiv/DOI/preprint 元数据、脚注标记和跨页重复短文本生成清洗候选，动作均为 `review_only`；原始 Markdown/JSON 与 SourceBlock 文本不做自动删除。
+- 新 OCR 成功或恢复成功后自动尝试物化；也提供手动物化接口，便于处理 TP-05 上线前已经成功的 OCR 历史记录。
+
+### 当前边界
+
+- 如果 ZIP 没有 `content_list*.json`，只保留原始 full.md，不从无页码 Markdown 猜测 SourceBlock 的页归属；质量报告会给出 warning。
+- Content List bbox 原样保存；只有 model.json 明确采用 0～1 归一化坐标时，恢复算法才转换为 0～1000 空间，并保留转换来源。
+- 当前清洗规则只做候选标注，不会自动移除页眉、页脚、水印或脚注；下一阶段需要结合真实教材样本评估误报，再设计人工确认/可撤销的清洗视图。
+- MinerU ZIP 中的 raster 图片资源已加入独立提取与持久化：只接收 JPG/JPEG/PNG/WEBP/TIFF，单文件 20 MiB、累计 200 MiB；Pillow 校验后按 SHA-256 命名保存，路径按 book/chapter/run 隔离。数据库只保存资源元数据，不保存二进制。
+- `SourceBlock.media_path` 保存布局文件中的原始媒体路径；SourceBlock API 根据同一 OCR run 的资产目录生成 `media_url`。工作台可分别预览教材整页和 OCR 提取的图片资源。
+- 已新增成功 run 的媒体恢复入口：使用已有 batch_id 重新下载 ZIP，不重新提交 PDF 或运行 OCR。用户原有 run 58fff639 可优先尝试该路径；能否恢复取决于 MinerU 是否仍保留 batch 结果。
+- bbox 到教材整页的精确叠加查看、页面旋转换算和 SVG 等矢量资源仍待后续工作。
+- 真实教材 run 58fff639-7322-470a-98a3-b666a76f805f 已由用户工作台报告确认：42/42 布局项映射，4 页引用，42 个块，1 个视觉类空文本、0 个异常空文本；model.json 成功恢复 1 个 paragraph，未映射 0，清洗候选 6 条且均为 review_only。图片资源文件仍需通过恢复按钮做一次浏览器预览验收。
+
+### 新增 API
+
+- `POST /api/chapters/{chapter_id}/ocr-runs/{run_id}/source-blocks`：对成功的章节 OCR 运行幂等地物化 SourceBlock，并返回清洗候选与 Markdown。
+- `GET /api/chapters/{chapter_id}/ocr-runs/{run_id}/source-blocks`：查询该版本的原文块，包含原图预览 URL。
+
+### 验收重点
+
+- 两页以上内容必须映射到正确 ChapterPage。
+- ZIP 图片资源应按 SHA-256 持久化，已有成功 batch 可恢复但不得重跑 OCR；图片 URL 只能访问当前 run 已登记资源。
+- 表格 HTML、公式文本和图注不得丢失。
+- 疑似水印/脚注/重复页眉页脚只能标记，不能从证据中删除。
+- 相同 ProcessingRun 重复物化不得重复创建 SourceBlock，修复已有空块时保留其数据库 ID。
+- model.json 恢复必须限定同一页的 text/paragraph 块，空间匹配不唯一或覆盖不足时拒绝回填。
+- 不存在 content_list.json 时必须明确报告未生成页级块。
+
+
+## 12. TP-06 第一阶段实现记录（代码与 CI 已通过，等待 Windows 页面验收）
+
+### 已实现
+
+- 目录候选只从 block_type=heading 的活动 SourceBlock 读取；普通 paragraph 永远不会自动变成目录节点。
+- 新增 sections.source_block_id，把每个自动生成的 Section 回连到标题 SourceBlock；目录查询可返回来源页、bbox、原文和教材原页地址。
+- 使用确定性规则识别 1.1、1.1.1 等点分编号；单级数字标题（如 1.、2.）按最近明确标题上下文确定父级；中文节标题与无编号标题保留为候选并标注层级审核问题。
+- 检查缺失父级、层级跳跃、空标题、重复编号/标题和编号断档；均写入 AuditIssue，不自动删除节点。
+- 识别是幂等的：通过 source_block_id 防重复，重复执行不会覆盖已存在 Section 的人工 title/parent/level/sort_order。
+- 人工 PATCH 支持修改标题、编号、层级、父级和排序；拒绝跨章节父级、自身/后代成环和子节点层级不大于父级的修改。
+- 人工修改写入 AuditEvent 的 before/after/actor/reason；目录查询返回最近 100 条变更历史。
+- 新增 /outline-review 目录工作台及 docs/TP06_ACCEPTANCE.md，验收可通过浏览器完成，不需要 Swagger。
+
+### 数据库迁移兼容性
+
+- 迁移 0004_section_source_block 同时兼容两类数据库：全新数据库（历史 0001 动态 metadata 已含新列）和旧数据库（需要新增列）。
+- SQLite 旧库用内联 ALTER TABLE ... ADD COLUMN ... REFERENCES ... 增加可空外键，避免重建带 parent_id 自引用外键的 sections 表。
+- SQLite 不支持直接删除带外键的列，因此 downgrade 保留 nullable source_block_id 和索引作为无害兼容列；PostgreSQL 等支持 ALTER 的方言执行正常删除。
+- 回归测试覆盖旧版 sections schema，验证升级后字段、外键和索引均存在。
+
+### 自动化验证
+
+- GitHub Actions：Ruff 通过；SQLite Alembic fresh-schema migration 通过；TP-06 旧 schema 升级测试通过；pytest 当前 61 passed。
+- 当前 CI 运行：41980304624。上述结果代表 GitHub 自动化验证，不代表 Windows 浏览器验收已完成。
+
+### Windows 页面验收
+
+详见 TP06_ACCEPTANCE.md。重点验证真实教材标题是否构成合理树、章节总标题是否跳过、1. / 2. 标题是否归属正确、原文页链接是否准确、保存后刷新是否保持，以及再次识别不会覆盖人工修正。
