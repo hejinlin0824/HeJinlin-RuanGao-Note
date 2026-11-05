@@ -188,6 +188,26 @@ def _flatten_layout_payload(payload: Any) -> list[dict[str, Any]]:
     return entries
 
 
+def _alternate_content_lists(
+    artifacts: dict[str, Any], selected_layout_file: str | None
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Return non-selected Content List artifacts for conservative text recovery."""
+    json_files = artifacts.get("json")
+    if not isinstance(json_files, dict):
+        return []
+
+    alternatives = []
+    for name, payload in json_files.items():
+        name = str(name)
+        basename = PurePosixPath(name).name.lower()
+        if "content_list" not in basename or name == selected_layout_file:
+            continue
+        entries = _flatten_layout_payload(payload)
+        if entries:
+            alternatives.append((name, entries))
+    return alternatives
+
+
 def _content_list(artifacts: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
     """Prefer V2's explicit semantic content, falling back to the legacy flat list."""
     json_files = artifacts.get("json")
@@ -425,6 +445,7 @@ def build_source_block_payloads(
         and reference.get("chapter_page_id")
     }
     payloads: list[dict[str, Any]] = []
+    alternate_layouts = _alternate_content_lists(artifacts, selected_layout_file)
     unmapped = 0
     repeated_pages: dict[tuple[str, str], set[str]] = defaultdict(set)
     candidate_reasons: dict[str, list[str]] = {}
@@ -440,6 +461,35 @@ def build_source_block_payloads(
             continue
         block_type = _kind(item)
         text = _block_text(item, block_type)
+        recovery_diagnostic = None
+        if not text and alternate_layouts:
+            target_bbox = _bbox(item.get("bbox"))
+            matches = []
+            for alternate_name, alternate_entries in alternate_layouts:
+                for alternate_index, alternate_item in enumerate(alternate_entries):
+                    if alternate_item.get("page_idx") != page_idx:
+                        continue
+                    if _kind(alternate_item) != block_type:
+                        continue
+                    if _bbox(alternate_item.get("bbox")) != target_bbox:
+                        continue
+                    alternate_text = _block_text(alternate_item, block_type)
+                    if alternate_text:
+                        matches.append(
+                            (alternate_name, alternate_index, alternate_text)
+                        )
+            # Never guess when multiple alternate entries could fit this block.
+            if len(matches) == 1:
+                alternate_name, alternate_index, text = matches[0]
+                recovery_diagnostic = {
+                    "entry_index": entry_index,
+                    "block_type": block_type,
+                    "page_idx": page_idx,
+                    "bbox": target_bbox,
+                    "source_layout": alternate_name,
+                    "source_entry_index": alternate_index,
+                    "match_method": "page_idx+block_type+exact_bbox",
+                }
         canonical = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         text_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -457,6 +507,8 @@ def build_source_block_payloads(
             "entry_index": entry_index,
             "block_key_base": occurrence_key,
         }
+        if recovery_diagnostic is not None:
+            payload["recovery_diagnostic"] = recovery_diagnostic
         if not text:
             content = item.get("content")
             content_keys = (
@@ -467,6 +519,9 @@ def build_source_block_payloads(
             media_path = item.get("img_path") or item.get("image_path")
             if not media_path and isinstance(content, dict):
                 media_path = content.get("img_path") or content.get("image_path")
+                image_source = content.get("image_source")
+                if not media_path and isinstance(image_source, dict):
+                    media_path = image_source.get("path")
             payload["empty_diagnostic"] = {
                 "entry_index": entry_index,
                 "raw_type": str(
@@ -500,11 +555,20 @@ def build_source_block_payloads(
     occurrence_counts: dict[str, int] = defaultdict(int)
     candidates = []
     empty_block_diagnostics = []
+    alternate_layout_recoveries = []
     for order, payload in enumerate(payloads):
         base = payload.pop("block_key_base")
         occurrence_counts[base] += 1
         payload["block_key"] = f"{base}:{occurrence_counts[base]}"
         payload["sort_order"] = order
+        recovery_diagnostic = payload.pop("recovery_diagnostic", None)
+        if recovery_diagnostic is not None:
+            alternate_layout_recoveries.append(
+                {
+                    **recovery_diagnostic,
+                    "block_key": payload["block_key"],
+                }
+            )
         empty_diagnostic = payload.pop("empty_diagnostic", None)
         if empty_diagnostic is not None:
             empty_block_diagnostics.append(
@@ -559,6 +623,7 @@ def build_source_block_payloads(
         "visual_only_empty_entries": visual_only_empty_count,
         "unexpected_empty_text_entries": unexpected_empty_count,
         "empty_block_diagnostics": empty_block_diagnostics,
+        "alternate_layout_recoveries": alternate_layout_recoveries,
         "unmapped_entries": unmapped,
         "cleanup_candidate_count": len(candidates),
         "cleanup_candidates": candidates,
