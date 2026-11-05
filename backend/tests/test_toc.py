@@ -330,41 +330,64 @@ def test_0004_migration_adds_source_link_to_legacy_sections_table(
 ):
     """An older database without source_block_id must upgrade without table recreation."""
     database_path = tmp_path / "legacy-outline.sqlite"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
     project_root = Path(__file__).resolve().parents[2]
     config = Config(str(project_root / "alembic.ini"))
+    engine = create_engine(database_url)
 
     try:
-        # The historical 0001 migration uses current metadata; emulate a database
-        # created before TP-06 by removing the new nullable column and its index.
-        command.upgrade(config, "0003_ocr_results")
-        engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+        # Build the pre-TP-06 table shape directly. Keep its self-referencing parent
+        # FK, but omit the later-added SourceBlock FK and index.
         with engine.begin() as connection:
             connection.exec_driver_sql(
-                "DROP INDEX IF EXISTS ix_sections_source_block_id"
+                """
+                CREATE TABLE alembic_version (
+                    version_num VARCHAR(32) NOT NULL PRIMARY KEY
+                )
+                """
             )
             connection.exec_driver_sql(
-                "ALTER TABLE sections DROP COLUMN source_block_id"
+                "INSERT INTO alembic_version (version_num) VALUES ('0003_ocr_results')"
             )
-        engine.dispose()
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE source_blocks (
+                    id VARCHAR(36) NOT NULL PRIMARY KEY
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE sections (
+                    id VARCHAR(36) NOT NULL PRIMARY KEY,
+                    chapter_id VARCHAR(36) NOT NULL,
+                    parent_id VARCHAR(36),
+                    title VARCHAR(300) NOT NULL,
+                    section_number VARCHAR(80),
+                    level INTEGER NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    FOREIGN KEY(parent_id) REFERENCES sections(id) ON DELETE RESTRICT
+                )
+                """
+            )
 
         command.upgrade(config, "head")
 
-        migrated_engine = create_engine(f"sqlite:///{database_path.as_posix()}")
-        try:
-            inspector = inspect(migrated_engine)
-            columns = {column["name"] for column in inspector.get_columns("sections")}
-            foreign_keys = inspector.get_foreign_keys("sections")
-            indexes = {index["name"] for index in inspector.get_indexes("sections")}
-            assert "source_block_id" in columns
-            assert any(
-                foreign_key["constrained_columns"] == ["source_block_id"]
-                and foreign_key["referred_table"] == "source_blocks"
-                for foreign_key in foreign_keys
-            )
-            assert "ix_sections_source_block_id" in indexes
-        finally:
-            migrated_engine.dispose()
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("sections")}
+        foreign_keys = inspector.get_foreign_keys("sections")
+        indexes = {index["name"] for index in inspector.get_indexes("sections")}
+        assert "source_block_id" in columns
+        assert any(
+            foreign_key["constrained_columns"] == ["source_block_id"]
+            and foreign_key["referred_table"] == "source_blocks"
+            for foreign_key in foreign_keys
+        )
+        assert "ix_sections_source_block_id" in indexes
     finally:
+        engine.dispose()
         get_settings.cache_clear()
