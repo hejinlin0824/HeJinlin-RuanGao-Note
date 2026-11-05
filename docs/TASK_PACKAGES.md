@@ -402,8 +402,9 @@
 | TP-02 | 已完成 | 领域模型、SQLite、Alembic、Repository/Service 和迁移测试已验收 |
 | TP-03 | 已完成 | 图片上传、原图存储、页面生命周期 API；GitHub CI 与 Windows 本地验收均通过，22 passed |
 | TP-04 | GitHub CI 通过，待 Windows/真实云端验收 | 单页 Mock OCR 保留；新增章节图片按序合并 PDF、MinerU v4 batch 上传/轮询/ZIP 解析、Token 本地隐藏配置与章节级 ProcessingRun。SourceBlock 映射属于 TP-05 |
-| TP-05 | 第一阶段已实现，待 CI/真实样本验收 | content_list.json → SourceBlock、页码映射、稳定块锚点、保守清洗候选和章节 Markdown；不自动删除可疑内容 |
-| TP-06～TP-16 | 待开始 | 按依赖顺序推进 |
+| TP-05 | 代码与 CI 已通过，待真实样本复验 | V2 优先、V1 精确匹配、model.json 同页 bbox 恢复；清洗仍为 review_only。现有 58fff639 样本待复验，图片资源独立持久化仍待完善 |
+| TP-06 | 第一阶段实现与 CI 通过，待 Windows 页面验收 | heading SourceBlock → Section 目录树；编号/父子层级识别、结构问题 AuditIssue、人工修正 AuditEvent、原文证据链接 |
+| TP-07～TP-16 | 待开始 | TP-06 验收后按依赖顺序继续 |
 
 ## 6. TP-01 当前实现记录
 
@@ -508,24 +509,25 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - 当前实现仍是同步长请求，默认最多轮询 25 分钟；任务队列、回调、断点恢复与自动 SourceBlock 生成尚未实现。
 
 
-## 11. TP-05 第一阶段实现记录（等待 CI 与真实样本验收）
+## 11. TP-05 第一阶段实现记录（代码与 CI 已通过，等待真实样本复验）
 
 ### 已实现
 
-- 从 MinerU ZIP 中的 `content_list.json` 读取标题、正文、表格、公式、图片说明、脚注等布局项。
+- 优先从 MinerU ZIP 中的 `content_list_v2.json` 读取标题、正文、表格、公式、图片说明、脚注等布局项；旧版 `content_list.json` 作为兼容来源。
 - 按 MinerU 的 0-based `page_idx` 映射 TP-04 保存的 1-based `pdf_page_index`，再关联原始 `ChapterPage.id`。
 - 使用来源页 ID、块类型、文本内容哈希和同页重复序号生成版本内稳定 `block_key`；数据库唯一约束仍为 `(processing_run_id, block_key)`。
-- 写入已有 SourceBlock 表，不增加迁移；保留 bbox、文本哈希、类型、排序和 ProcessingRun 版本。
+- 写入已有 SourceBlock 表；保留 bbox、文本哈希、类型、排序和 ProcessingRun 版本。对 V2 空文本块，先按同页/同类型/exact bbox 从 V1 回补；仍为空时，再尝试从同页 model.json 文本块按归一化 bbox 精确、高重叠或不重叠片段覆盖规则恢复，并记录来源 entry、bbox、坐标换算和匹配方式。
 - 生成带 `<!-- source:block_key -->` 锚点的章节 Markdown。
 - 对 arXiv/DOI/preprint 元数据、脚注标记和跨页重复短文本生成清洗候选，动作均为 `review_only`；原始 Markdown/JSON 与 SourceBlock 文本不做自动删除。
 - 新 OCR 成功或恢复成功后自动尝试物化；也提供手动物化接口，便于处理 TP-05 上线前已经成功的 OCR 历史记录。
 
 ### 当前边界
 
-- 如果 ZIP 没有 `content_list.json`，只保留原始 full.md，不从无页码 Markdown 猜测 SourceBlock 的页归属；质量报告会给出 warning。
-- bbox 保留 MinerU 原始数值，不擅自假设其坐标单位或归一化方式。
+- 如果 ZIP 没有 `content_list*.json`，只保留原始 full.md，不从无页码 Markdown 猜测 SourceBlock 的页归属；质量报告会给出 warning。
+- Content List bbox 原样保存；只有 model.json 明确采用 0～1 归一化坐标时，恢复算法才转换为 0～1000 空间，并保留转换来源。
 - 当前清洗规则只做候选标注，不会自动移除页眉、页脚、水印或脚注；下一阶段需要结合真实教材样本评估误报，再设计人工确认/可撤销的清洗视图。
-- 图片资产的独立提取与持久化、bbox 到前端图片的精确叠加查看，仍需后续工作。
+- 图片块的 image_source.path 已能识别，但 ZIP 中二进制图片资产的独立提取、持久化与工作台预览尚未完成；bbox 到前端图片的精确叠加查看仍待后续工作。
+- model.json 回补目前已有合成数据回归测试；真实教材 run 58fff639-7322-470a-98a3-b666a76f805f 是否命中，仍需用户在工作台复验，不能仅凭 CI 推断。
 
 ### 新增 API
 
@@ -537,5 +539,36 @@ TP-02 在以上命令真实运行并修复问题前，不标记为完成。
 - 两页以上内容必须映射到正确 ChapterPage。
 - 表格 HTML、公式文本和图注不得丢失。
 - 疑似水印/脚注/重复页眉页脚只能标记，不能从证据中删除。
-- 相同 ProcessingRun 重复物化不得重复创建 SourceBlock。
+- 相同 ProcessingRun 重复物化不得重复创建 SourceBlock，修复已有空块时保留其数据库 ID。
+- model.json 恢复必须限定同一页的 text/paragraph 块，空间匹配不唯一或覆盖不足时拒绝回填。
 - 不存在 content_list.json 时必须明确报告未生成页级块。
+
+
+## 12. TP-06 第一阶段实现记录（代码与 CI 已通过，等待 Windows 页面验收）
+
+### 已实现
+
+- 目录候选只从 block_type=heading 的活动 SourceBlock 读取；普通 paragraph 永远不会自动变成目录节点。
+- 新增 sections.source_block_id，把每个自动生成的 Section 回连到标题 SourceBlock；目录查询可返回来源页、bbox、原文和教材原页地址。
+- 使用确定性规则识别 1.1、1.1.1 等点分编号；单级数字标题（如 1.、2.）按最近明确标题上下文确定父级；中文节标题与无编号标题保留为候选并标注层级审核问题。
+- 检查缺失父级、层级跳跃、空标题、重复编号/标题和编号断档；均写入 AuditIssue，不自动删除节点。
+- 识别是幂等的：通过 source_block_id 防重复，重复执行不会覆盖已存在 Section 的人工 title/parent/level/sort_order。
+- 人工 PATCH 支持修改标题、编号、层级、父级和排序；拒绝跨章节父级、自身/后代成环和子节点层级不大于父级的修改。
+- 人工修改写入 AuditEvent 的 before/after/actor/reason；目录查询返回最近 100 条变更历史。
+- 新增 /outline-review 目录工作台及 docs/TP06_ACCEPTANCE.md，验收可通过浏览器完成，不需要 Swagger。
+
+### 数据库迁移兼容性
+
+- 迁移 0004_section_source_block 同时兼容两类数据库：全新数据库（历史 0001 动态 metadata 已含新列）和旧数据库（需要新增列）。
+- SQLite 旧库用内联 ALTER TABLE ... ADD COLUMN ... REFERENCES ... 增加可空外键，避免重建带 parent_id 自引用外键的 sections 表。
+- SQLite 不支持直接删除带外键的列，因此 downgrade 保留 nullable source_block_id 和索引作为无害兼容列；PostgreSQL 等支持 ALTER 的方言执行正常删除。
+- 回归测试覆盖旧版 sections schema，验证升级后字段、外键和索引均存在。
+
+### 自动化验证
+
+- GitHub Actions：Ruff 通过；SQLite Alembic fresh-schema migration 通过；TP-06 旧 schema 升级测试通过；pytest 当前 61 passed。
+- 当前 CI 运行：41980304624。上述结果代表 GitHub 自动化验证，不代表 Windows 浏览器验收已完成。
+
+### Windows 页面验收
+
+详见 TP06_ACCEPTANCE.md。重点验证真实教材标题是否构成合理树、章节总标题是否跳过、1. / 2. 标题是否归属正确、原文页链接是否准确、保存后刷新是否保持，以及再次识别不会覆盖人工修正。
