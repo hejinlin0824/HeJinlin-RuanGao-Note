@@ -1,8 +1,8 @@
 """TP-06 regression tests for rule-based outline extraction and manual correction."""
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from fastapi.testclient import TestClient
 
 from ruangao_note.db.base import Base
 from ruangao_note.db.session import create_database_engine, get_db
